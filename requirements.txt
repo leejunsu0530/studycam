@@ -1,2 +1,4 @@
 gradio
 opencv-python
+rich
+pywebview
