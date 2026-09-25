@@ -32,6 +32,7 @@ QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus { background
 QComboBox QAbstractItemView { background:#ffffff;color:#213547;selection-background-color:#dce5ff;selection-color:#213547;border:1px solid #cfd6e3; }
 QTableWidget::item:selected { background:#dce5ff;color:#213547;border:1px solid #5068e8; }
 QCheckBox { color:#213547;spacing:7px; } QCheckBox:hover { color:#5068e8; } QCheckBox::indicator { width:16px;height:16px;border:1px solid #71809a;border-radius:4px;background:#ffffff; } QCheckBox::indicator:hover { border:2px solid #5068e8;background:#edf1ff; } QCheckBox::indicator:checked { background:#5068e8;border-color:#5068e8; }
+QCheckBox:disabled { color:#a9b0bc; } QCheckBox::indicator:disabled { border-color:#cbd1db;background:#edf0f4; } QCheckBox::indicator:checked:disabled { background:#b9c1ce;border-color:#b9c1ce; }
 QHeaderView::section { background:#eff2ff;border:0;padding:7px;font-weight:600; }
 QCalendarWidget QWidget,QCalendarWidget QTableView { background:#273246;color:#f7f9ff; }
 QCalendarWidget QToolButton { color:#fff;background:#364563;border-radius:6px;padding:6px; }
@@ -129,7 +130,7 @@ class Planner(QWidget):
     def __init__(self,store:StudyStore,day:date,refresh_calendar,parent=None):
         super().__init__(parent); self.store,self.day,self.refresh_calendar=store,day,refresh_calendar; self.loading=False
         layout=QVBoxLayout(self); layout.setContentsMargins(18,18,18,18); self.title=QLabel(); self.title.setStyleSheet("font-size:19px;font-weight:700;"); layout.addWidget(self.title)
-        self.list=QListWidget(); self.list.itemChanged.connect(self.save_checks); layout.addWidget(self.list)
+        self.list=QListWidget(); layout.addWidget(self.list)
         inputs=QHBoxLayout(); self.subject=QComboBox(); self.subject.setEditable(True); self.refresh_subjects(); self.subject.activated.connect(self.select_subject); self.goal=QLineEdit(); self.goal.setPlaceholderText("목표 (예: p13~30까지 복습하기)"); self.kind=QComboBox(); self.kind.addItems(["복습","예습","자율"]); self.add=QPushButton("목표 추가")
         inputs.addWidget(self.subject); inputs.addWidget(self.goal,1); inputs.addWidget(self.kind); inputs.addWidget(self.add); layout.addLayout(inputs)
         actions=QHBoxLayout(); self.recommend_button=secondary("시간표에서 추천 만들기"); self.delete=secondary("선택 목표 삭제"); actions.addWidget(self.recommend_button); actions.addWidget(self.delete); actions.addStretch(); layout.addLayout(actions)
@@ -141,20 +142,22 @@ class Planner(QWidget):
     def editable(self): return self.day >= date.today()
     def reload(self):
         self.loading=True; self.title.setText(f"{self.day:%Y년 %m월 %d일} 스터디 플래너"); self.list.clear(); can_check=self.editable()
-        for task in self.store.tasks_for(self.day):
-            item=QListWidgetItem(f"[{task['kind']}] {task['subject']} — {task['text']}"); flags=item.flags()|Qt.ItemIsUserCheckable
-            if not can_check: flags &= ~Qt.ItemIsEnabled
-            item.setFlags(flags); item.setCheckState(Qt.Checked if task.get("done") else Qt.Unchecked); self.list.addItem(item)
+        for index, task in enumerate(self.store.tasks_for(self.day)):
+            item=QListWidgetItem(); checkbox=QCheckBox(f"[{task['kind']}] {task['subject']} — {task['text']}")
+            checkbox.setChecked(task.get("done", False)); checkbox.setEnabled(can_check)
+            checkbox.toggled.connect(lambda checked, task_index=index: self.set_done(task_index, checked))
+            item.setSizeHint(checkbox.sizeHint()); self.list.addItem(item); self.list.setItemWidget(item, checkbox)
         if not can_check: self.title.setText(self.title.text()+"  (지난 날짜: 완료 상태 변경 불가)")
         self.loading=False
     def add_task(self):
         subject=self.subject.currentText().strip()
         if subject=="직접 입력": subject="과목"
         if self.goal.text().strip(): self.store.add_task(self.day,subject,self.goal.text(),self.kind.currentText()); self.goal.clear(); self.reload(); self.refresh_calendar()
-    def save_checks(self,_):
+    def set_done(self, task_index, checked):
         if self.loading or not self.editable(): return
         tasks=self.store.tasks_for(self.day)
-        for row in range(min(self.list.count(),len(tasks))): tasks[row]["done"]=self.list.item(row).checkState()==Qt.Checked
+        if task_index >= len(tasks): return
+        tasks[task_index]["done"]=checked
         self.store.update_tasks(self.day,tasks); self.refresh_calendar()
     def delete_task(self):
         row=self.list.currentRow()
