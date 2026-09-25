@@ -52,3 +52,14 @@ studycam
 - 간헐 사진 촬영과 사진 기반 MP4 타임랩스 생성, 생성 영상 경로 저장
 
 YouTube 자동 업로드는 Google OAuth 클라이언트 인증과 업로드 권한이 필요한 외부 연동 기능이라, 인증 정보를 코드나 저장소에 포함하지 않았습니다. 영상은 먼저 로컬에 안전하게 생성됩니다.
+
+## Windows EXE 만들기
+
+개발 환경에서 한 번만 아래 명령을 실행하면, Python 설치 없이 실행할 수 있는 폴더형 배포본이 `dist\StudyCam\StudyCam.exe`에 생성됩니다.
+
+```powershell
+pip install ".[build]"
+.\scripts\build_exe.ps1
+```
+
+단일 EXE가 필요하면 `.\scripts\build_exe.ps1 -OneFile`을 사용할 수 있습니다. 기본 `onedir` 방식은 실행 시작이 빠르고 문제를 확인하기 쉬워 권장됩니다.

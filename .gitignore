@@ -203,6 +203,11 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# PyInstaller build products
+/build/
+/dist/
+/*.spec
+
 # Ruff stuff:
 .ruff_cache/
 

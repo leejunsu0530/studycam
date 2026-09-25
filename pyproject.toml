@@ -29,6 +29,11 @@ dependencies = [
   "opencv-python>=4.10",
 ]
 
+[project.optional-dependencies]
+build = [
+  "pyinstaller>=6.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/leejunsu0530/studycam"
 Repository = "https://github.com/leejunsu0530/studycam"
