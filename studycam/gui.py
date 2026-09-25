@@ -71,11 +71,12 @@ class SettingsDialog(QDialog):
         self.alarm_enabled=QCheckBox("집중·휴식 전환 시 알람음 재생"); self.alarm_enabled.setChecked(s["alarm_enabled"])
         self.alarm_volume=QSpinBox(); self.alarm_volume.setRange(0,100); self.alarm_volume.setSuffix("%"); self.alarm_volume.setValue(s["alarm_volume"])
         self.start_maximized=QCheckBox("다음 앱 실행 시 창 최대화"); self.start_maximized.setChecked(s["start_maximized"])
+        self.pomodoro_with_camera=QCheckBox("촬영 시작 시 뽀모도로도 자동 시작"); self.pomodoro_with_camera.setChecked(s["pomodoro_with_camera"])
         self.completed_color=QLineEdit(s["completed_color"]); self.completed_color.setPlaceholderText("#dce8ff")
         self.failed_color=QLineEdit(s["failed_color"]); self.failed_color.setPlaceholderText("#ffd9d9")
         choose, open_dir = secondary("폴더 선택"), secondary("폴더 열기"); choose.clicked.connect(self.choose_folder); open_dir.clicked.connect(self.open_folder)
         folder=QHBoxLayout(); folder.addWidget(self.storage_dir,1); folder.addWidget(choose); folder.addWidget(open_dir)
-        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized)
+        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
     def choose_folder(self):
         selected=QFileDialog.getExistingDirectory(self,"저장 폴더 선택",self.storage_dir.text())
@@ -87,7 +88,7 @@ class SettingsDialog(QDialog):
         completed, failed = self.completed_color.text().strip(), self.failed_color.text().strip()
         if not QColor(completed).isValid() or not QColor(failed).isValid():
             QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
-        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value(),completed,failed,self.start_maximized.isChecked()); self.accept()
+        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value(),completed,failed,self.start_maximized.isChecked(),self.pomodoro_with_camera.isChecked()); self.accept()
 
 
 class ScheduleDialog(QDialog):
@@ -204,6 +205,7 @@ class StudioWindow(QMainWindow):
         if self.recording and not self.in_break:
             if not self.camera.start(): self.recording=False; self.record_button.setText("촬영 시작"); self.state_label.setText("카메라를 찾을 수 없습니다. 카메라 연결·권한을 확인하세요."); return
             self.preview_timer.start(); self.update_preview(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"]*1000)); self.state_label.setText("공부 중: 카메라를 유지하며 설정 간격으로 저장합니다.")
+            if self.store.data["settings"]["pomodoro_with_camera"] and not self.clock.isActive(): self.set_phase(False); self.clock.start(); self.pomodoro_button.setText("뽀모도로 일시정지")
         elif not self.recording: self.finalize_recording(True)
     def toggle_pomodoro(self):
         if self.clock.isActive(): self.clock.stop(); self.pomodoro_button.setText("뽀모도로 시작")

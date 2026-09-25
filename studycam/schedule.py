@@ -10,7 +10,7 @@ from typing import Any
 
 DEFAULT_DATA: dict[str, Any] = {
     "tasks": {}, "subjects": [], "schedule": [], "started_on": date.today().isoformat(),
-    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False},
+    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False},
     "videos": {},
 }
 
@@ -59,6 +59,6 @@ class StudyStore:
             cursor -= timedelta(days=1)
         return count
 
-    def save_settings(self, study: int, rest: int, capture: float, speed: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int, completed_color: str, failed_color: str, start_maximized: bool) -> None:
-        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume, "completed_color": completed_color, "failed_color": failed_color, "start_maximized": start_maximized}
+    def save_settings(self, study: int, rest: int, capture: float, speed: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int, completed_color: str, failed_color: str, start_maximized: bool, pomodoro_with_camera: bool) -> None:
+        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume, "completed_color": completed_color, "failed_color": failed_color, "start_maximized": start_maximized, "pomodoro_with_camera": pomodoro_with_camera}
         self.save()
