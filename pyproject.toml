@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "studycam"
+version = "0.1.0"
+description = "A desktop study planner with a study camera and time-lapse recorder."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Lee Junsu" },
+]
+keywords = ["study", "pomodoro", "camera", "timelapse", "pyside6"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Education",
+]
+dependencies = [
+  "PySide6>=6.7",
+  "opencv-python>=4.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/leejunsu0530/studycam"
+Repository = "https://github.com/leejunsu0530/studycam"
+Issues = "https://github.com/leejunsu0530/studycam/issues"
+
+[project.scripts]
+studycam = "studycam.gui:main"
+
+[tool.setuptools.packages.find]
+include = ["studycam*"]

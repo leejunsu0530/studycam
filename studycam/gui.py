@@ -10,7 +10,7 @@ from PySide6.QtCore import QDate, QTimer, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QImage, QPixmap, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -28,6 +28,10 @@ QPushButton[secondary='true'] { background: white; color: #5068e8; border: 1px s
 QFrame[card='true'] { background: white; border: 1px solid #e4e8f0; border-radius: 12px; }
 QListWidget, QTableWidget { background: white; border: 1px solid #e4e8f0; border-radius: 8px; }
 QHeaderView::section { background: #eff2ff; border: 0; padding: 7px; font-weight: 600; }
+QCalendarWidget QWidget { background: #273246; color: #f7f9ff; }
+QCalendarWidget QToolButton { color: #ffffff; background: #364563; border-radius: 6px; padding: 6px; }
+QCalendarWidget QAbstractItemView { selection-background-color: #5068e8; selection-color: #ffffff; color: #ffffff; background: #273246; }
+QCalendarWidget QTableView { color: #ffffff; background: #273246; gridline-color: #4b5a75; }
 """
 
 
@@ -52,9 +56,10 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("공부 및 촬영 설정")
         form = QFormLayout(self)
         s = store.data["settings"]
-        self.study, self.rest, self.capture, self.speed = (QSpinBox() for _ in range(4))
-        for box, value, maximum in ((self.study, s["study_minutes"], 360), (self.rest, s["break_minutes"], 180), (self.capture, s["capture_seconds"], 3600), (self.speed, s["speed"], 120)):
+        self.study, self.rest, self.speed = (QSpinBox() for _ in range(3))
+        for box, value, maximum in ((self.study, s["study_minutes"], 360), (self.rest, s["break_minutes"], 180), (self.speed, s["speed"], 120)):
             box.setRange(1, maximum); box.setValue(value)
+        self.capture = QDoubleSpinBox(); self.capture.setRange(0.1, 3600); self.capture.setSingleStep(0.1); self.capture.setDecimals(1); self.capture.setValue(float(s["capture_seconds"]))
         form.addRow("집중 시간 (분)", self.study)
         form.addRow("휴식 시간 (분)", self.rest)
         form.addRow("사진 촬영 간격 (초)", self.capture)
@@ -154,23 +159,42 @@ class Planner(QWidget):
         self.reload(); self.refresh_calendar()
 
 
+class PlannerViewer(QDialog):
+    """A read-only planner used when opening a day from the calendar."""
+    def __init__(self, store: StudyStore, day: date, parent: QWidget | None = None) -> None:
+        super().__init__(parent); self.setWindowTitle("스터디 플래너 보기"); self.resize(560, 460)
+        layout = QVBoxLayout(self)
+        title = QLabel(f"{day:%Y년 %m월 %d일} 스터디 플래너"); title.setStyleSheet("font-size: 19px; font-weight: 700;"); layout.addWidget(title)
+        tasks = store.tasks_for(day)
+        if not tasks:
+            layout.addWidget(QLabel("등록된 공부 목표가 없습니다."))
+        else:
+            for task in tasks:
+                done = "✓ 완료" if task.get("done") else "○ 미완료"
+                label = QLabel(f"{done}   [{task['kind']}] {task['subject']} — {task['text']}")
+                label.setWordWrap(True); label.setStyleSheet("padding: 10px; background: white; border: 1px solid #e4e8f0; border-radius: 7px;"); layout.addWidget(label)
+        videos = store.data["videos"].get(store.key(day), [])
+        layout.addSpacing(8); layout.addWidget(QLabel(f"생성된 공부 영상: {len(videos)}개")); layout.addStretch()
+        close = QDialogButtonBox(QDialogButtonBox.Close); close.rejected.connect(self.reject); close.accepted.connect(self.accept); layout.addWidget(close)
+
+
 class StudioWindow(QMainWindow):
     def __init__(self, store: StudyStore, chosen_day: date, refresh_home) -> None:
         super().__init__(); self.store, self.refresh_home = store, refresh_home; self.day = chosen_day
-        self.camera = CameraService(); self.images: list[Path] = []; self.recording = False; self.in_break = False; self.remaining = 0
+        self.camera = CameraService(); self.images: list[Path] = []; self.recording = False; self.in_break = False; self.remaining = 0; self.current_frame = None
         self.setWindowTitle("StudyCam — 스터디 캠"); self.resize(1180, 760)
         root = QWidget(); self.setCentralWidget(root); outer = QVBoxLayout(root)
         top = QHBoxLayout(); self.timer_label = QLabel("준비 완료"); self.timer_label.setStyleSheet("font-size: 22px; font-weight: 700;")
-        self.state_label = QLabel("카메라는 촬영 순간에만 켜집니다."); settings = secondary("타이머·촬영 설정")
+        self.state_label = QLabel("촬영 중에는 카메라를 유지하고 10 FPS로 미리보기를 갱신합니다."); settings = secondary("타이머·촬영 설정")
         top.addWidget(self.timer_label); top.addWidget(self.state_label); top.addStretch(); top.addWidget(settings); outer.addLayout(top)
         splitter = QSplitter(); outer.addWidget(splitter, 1)
         left = QWidget(); left_layout = QVBoxLayout(left); self.preview = QLabel("카메라 미리보기\n(촬영 시작 후 첫 사진이 표시됩니다)"); self.preview.setAlignment(Qt.AlignCenter); self.preview.setMinimumSize(520, 390); self.preview.setStyleSheet("background: #202536; color: #dce3ff; border-radius: 12px; font-size: 16px;"); left_layout.addWidget(self.preview)
         controls = QHBoxLayout(); self.record_button = QPushButton("촬영 시작"); self.pomodoro_button = secondary("뽀모도로 시작"); finish = secondary("영상 만들기")
         controls.addWidget(self.record_button); controls.addWidget(self.pomodoro_button); controls.addWidget(finish); left_layout.addLayout(controls); splitter.addWidget(left)
         self.planner = Planner(store, chosen_day, refresh_home); splitter.addWidget(self.planner); splitter.setSizes([650, 450])
-        self.capture_timer, self.clock = QTimer(self), QTimer(self); self.clock.setInterval(1000)
+        self.capture_timer, self.preview_timer, self.clock = QTimer(self), QTimer(self), QTimer(self); self.preview_timer.setInterval(100); self.clock.setInterval(1000)
         self.record_button.clicked.connect(self.toggle_recording); self.pomodoro_button.clicked.connect(self.toggle_pomodoro); finish.clicked.connect(self.finish_video); settings.clicked.connect(self.open_settings)
-        self.capture_timer.timeout.connect(self.capture); self.clock.timeout.connect(self.tick)
+        self.capture_timer.timeout.connect(self.capture); self.preview_timer.timeout.connect(self.update_preview); self.clock.timeout.connect(self.tick)
         self.set_phase(False)
 
     def open_settings(self) -> None:
@@ -180,9 +204,12 @@ class StudioWindow(QMainWindow):
         self.recording = not self.recording
         self.record_button.setText("촬영 중지" if self.recording else "촬영 시작")
         if self.recording and not self.in_break:
-            self.capture(); self.capture_timer.start(self.store.data["settings"]["capture_seconds"] * 1000)
-        else: self.capture_timer.stop()
-        self.state_label.setText("공부 중: 설정한 간격으로 사진을 남깁니다." if self.recording else "촬영이 중지되었습니다.")
+            if not self.camera.start():
+                self.recording = False; self.record_button.setText("촬영 시작"); self.state_label.setText("카메라를 찾을 수 없습니다. 카메라 연결·권한을 확인하세요."); return
+            self.preview_timer.start(); self.update_preview(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"] * 1000))
+            self.state_label.setText("공부 중: 카메라를 유지하며 설정한 간격으로 사진을 저장합니다.")
+        elif not self.recording:
+            self.finalize_recording(announce=True)
 
     def toggle_pomodoro(self) -> None:
         if self.clock.isActive():
@@ -194,8 +221,11 @@ class StudioWindow(QMainWindow):
         self.in_break = break_time
         minutes = self.store.data["settings"]["break_minutes" if break_time else "study_minutes"]
         self.remaining = minutes * 60; self.update_clock()
-        if break_time: self.capture_timer.stop()
-        elif self.recording: self.capture_timer.start(self.store.data["settings"]["capture_seconds"] * 1000)
+        if break_time:
+            self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop()
+        elif self.recording:
+            if self.camera.start():
+                self.preview_timer.start(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"] * 1000))
 
     def tick(self) -> None:
         self.remaining -= 1
@@ -208,20 +238,35 @@ class StudioWindow(QMainWindow):
         if self.in_break: self.state_label.setText("휴식 중: 배터리 보호를 위해 촬영하지 않습니다.")
 
     def capture(self) -> None:
-        image = self.camera.capture()
+        image = self.camera.save_frame(self.current_frame)
         if image:
-            self.images.append(image); pixmap = QPixmap(str(image)).scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation); self.preview.setPixmap(pixmap)
-        else: self.state_label.setText("카메라를 찾을 수 없습니다. 카메라 연결·권한을 확인하세요.")
+            self.images.append(image)
+
+    def update_preview(self) -> None:
+        frame = self.camera.read()
+        if frame is None:
+            return
+        self.current_frame = frame.copy()
+        height, width, channels = frame.shape
+        image = QImage(frame.data, width, height, channels * width, QImage.Format_BGR888)
+        self.preview.setPixmap(QPixmap.fromImage(image).scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def finish_video(self) -> None:
-        self.capture_timer.stop(); self.recording = False; self.record_button.setText("촬영 시작")
+        self.recording = False; self.record_button.setText("촬영 시작"); self.finalize_recording(announce=True)
+
+    def finalize_recording(self, announce: bool = False) -> None:
+        """Release the webcam and save one video for the current session."""
+        self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop()
         video = self.camera.make_timelapse(self.images, self.store.data["settings"]["speed"])
-        if not video: QMessageBox.information(self, "영상 만들기", "저장된 사진이 없어 영상을 만들 수 없습니다."); return
+        if not video:
+            if announce: QMessageBox.information(self, "영상 만들기", "저장된 사진이 없어 영상을 만들 수 없습니다.")
+            return
         key = self.store.key(self.day); self.store.data["videos"].setdefault(key, []).append(str(video)); self.store.save()
-        QMessageBox.information(self, "영상 완성", f"타임랩스가 저장되었습니다.\n{video}\n\nYouTube 자동 업로드는 Google OAuth 인증 정보를 설정한 뒤 연결할 수 있습니다.")
+        self.images.clear(); self.current_frame = None
+        if announce: QMessageBox.information(self, "영상 완성", f"타임랩스가 자동 저장되었습니다.\n{video}")
 
     def closeEvent(self, event) -> None:
-        self.capture_timer.stop(); self.clock.stop(); self.refresh_home(); event.accept()
+        self.recording = False; self.clock.stop(); self.finalize_recording(); self.refresh_home(); event.accept()
 
 
 class HomePage(QWidget):
@@ -235,7 +280,7 @@ class HomePage(QWidget):
         card = QFrame(); card.setProperty("card", True); card_layout = QVBoxLayout(card); self.calendar = QCalendarWidget(); self.calendar.setGridVisible(True); self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumHeight(510); card_layout.addWidget(self.calendar); layout.addWidget(card, 1)
         bottom = QHBoxLayout(); self.detail = QLabel(); planner = secondary("선택한 날짜의 플래너 열기"); schedule = secondary("주간 시간표 설정"); videos = secondary("선택 날짜 영상 열기")
         bottom.addWidget(self.detail); bottom.addStretch(); bottom.addWidget(videos); bottom.addWidget(schedule); bottom.addWidget(planner); layout.addLayout(bottom)
-        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_studio); schedule.clicked.connect(self.open_schedule); videos.clicked.connect(self.open_video); self.calendar.selectionChanged.connect(self.select_day)
+        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_planner); schedule.clicked.connect(self.open_schedule); videos.clicked.connect(self.open_video); self.calendar.selectionChanged.connect(self.select_day)
         self.calendar.setSelectedDate(qdate(self.selected_day)); self.refresh()
 
     def refresh(self) -> None:
@@ -260,6 +305,9 @@ class HomePage(QWidget):
     def open_studio(self) -> None:
         if self.studio and self.studio.isVisible(): self.studio.raise_(); self.studio.activateWindow(); return
         self.studio = StudioWindow(self.store, self.selected_day, self.refresh); self.studio.show()
+
+    def open_planner(self) -> None:
+        PlannerViewer(self.store, self.selected_day, self).exec()
 
     def open_video(self) -> None:
         videos = self.store.data["videos"].get(self.store.key(self.selected_day), [])

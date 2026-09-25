@@ -6,11 +6,18 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m studycam
+pip install .
+studycam
 ```
 
-카메라가 없거나 권한이 거부된 경우에도 플래너와 타이머는 이용할 수 있습니다. 촬영은 카메라를 계속 점유하지 않고, 설정된 간격마다 한 장씩 촬영한 뒤 즉시 해제합니다.
+GitHub에서 바로 설치하려면 다음 명령을 사용합니다.
+
+```powershell
+pip install "git+https://github.com/leejunsu0530/studycam.git"
+studycam
+```
+
+카메라가 없거나 권한이 거부된 경우에도 플래너와 타이머는 이용할 수 있습니다. 촬영 세션 중에는 카메라를 유지하며 10 FPS로 미리보기를 갱신하고, 설정한 간격(최소 0.1초)마다 사진을 저장합니다. 휴식과 촬영 종료 시에는 카메라를 해제합니다.
 
 ## Features
 - pyside6를 통한 gui 구현.

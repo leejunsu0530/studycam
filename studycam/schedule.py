@@ -55,6 +55,6 @@ class StudyStore:
             cursor -= timedelta(days=1)
         return count
 
-    def save_settings(self, study: int, rest: int, capture: int, speed: int) -> None:
+    def save_settings(self, study: int, rest: int, capture: float, speed: int) -> None:
         self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed}
         self.save()
