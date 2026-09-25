@@ -1,4 +1,2 @@
-gradio
-opencv-python
-rich
-pywebview
+PySide6>=6.7
+opencv-python>=4.10

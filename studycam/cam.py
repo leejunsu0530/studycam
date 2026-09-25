@@ -1,77 +1,49 @@
-import sys
-import os
-import threading
-import time
+"""Camera capture and time-lapse assembly. The camera is opened only per capture."""
+
+from __future__ import annotations
+
+from datetime import datetime
 from pathlib import Path
+
 import cv2
-import rich
-from ._console import console
 
 
-class Camera:
-    def __init__(
-            self,
-            photo_path: str | Path,
-            index: int = 0,
-            fps: int = 30,
-    ) -> None:
-        """
-        - 카메라 루프에 대한 제어
-        - 찍은 사진에 대한 제어 및 관리
-        - 스레드 처리 주의
-        - 카메라 드라이버가 지원하는 해상도와 fps를 지정해야 함ㄴ
+class CameraService:
+    def __init__(self, directory: Path | None = None, camera_index: int = 0) -> None:
+        self.directory = directory or Path.home() / ".studycam" / "captures"
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.camera_index = camera_index
 
-        - 카메라만 다루는 만큼 전체적인 파일들의 경로는 여기서 관리하지 않음.
-        """
-        self.cap = cv2.VideoCapture(index)
-
-        if not self.cap.isOpened():
-            raise RuntimeError("카메라를 열 수 없습니다.")
-
-        self.fps = fps
-
-        self._frame = None
-        self._lock = threading.Lock()
-        self._running = False
-        self._thread = None
-
-    def start(self):
-        if self._running:
-            return
-
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._capture_loop,
-            daemon=True,
-        )
-        self._thread.start()
-
-    def _capture_loop(self):
-        interval = 1 / self.fps
-
-        while self._running:
-            start = time.perf_counter()
-
-            ret, frame = self.cap.read()
-
-            if ret:
-                with self._lock:
-                    self._frame = frame
-
-            elapsed = time.perf_counter() - start
-            time.sleep(max(0, interval - elapsed))
-
-    def read(self):
-        with self._lock:
-            if self._frame is None:
+    def capture(self) -> Path | None:
+        """Take a single frame and immediately release the webcam."""
+        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        try:
+            if not cap.isOpened():
                 return None
+            ok, frame = cap.read()
+            if not ok:
+                return None
+            path = self.directory / f"{datetime.now():%Y%m%d_%H%M%S_%f}.jpg"
+            cv2.imwrite(str(path), frame)
+            return path
+        finally:
+            cap.release()
 
-            return self._frame.copy()
-
-    def stop(self):
-        self._running = False
-
-        if self._thread is not None:
-            self._thread.join()
-
-        self.cap.release()
+    def make_timelapse(self, images: list[Path], speed: int = 20) -> Path | None:
+        valid = [path for path in images if path.exists()]
+        if not valid:
+            return None
+        first = cv2.imread(str(valid[0]))
+        if first is None:
+            return None
+        height, width = first.shape[:2]
+        output = self.directory / f"study_{datetime.now():%Y%m%d_%H%M%S}.mp4"
+        writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), max(1, speed), (width, height))
+        try:
+            for path in valid:
+                frame = cv2.imread(str(path))
+                if frame is not None:
+                    writer.write(cv2.resize(frame, (width, height)))
+        finally:
+            writer.release()
+        return output

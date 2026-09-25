@@ -1,0 +1,60 @@
+"""Persistent local data for StudyCam."""
+
+from __future__ import annotations
+
+import json
+from copy import deepcopy
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+DEFAULT_DATA: dict[str, Any] = {"tasks": {}, "schedule": [], "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20}, "videos": {}}
+
+
+class StudyStore:
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or Path.home() / ".studycam" / "studycam.json"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.data = self._load()
+
+    def _load(self) -> dict[str, Any]:
+        try:
+            saved = json.loads(self.path.read_text(encoding="utf-8"))
+            merged = deepcopy(DEFAULT_DATA)
+            merged.update(saved)
+            merged["settings"] = {**DEFAULT_DATA["settings"], **saved.get("settings", {})}
+            return merged
+        except (OSError, json.JSONDecodeError):
+            return deepcopy(DEFAULT_DATA)
+
+    def save(self) -> None:
+        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def key(day: date) -> str: return day.isoformat()
+
+    def tasks_for(self, day: date) -> list[dict[str, Any]]: return self.data["tasks"].setdefault(self.key(day), [])
+
+    def add_task(self, day: date, subject: str, text: str, kind: str = "복습") -> None:
+        self.tasks_for(day).append({"subject": subject.strip() or "과목", "text": text.strip(), "kind": kind, "done": False})
+        self.save()
+
+    def update_tasks(self, day: date, tasks: list[dict[str, Any]]) -> None:
+        self.data["tasks"][self.key(day)] = tasks
+        self.save()
+
+    def completed(self, day: date) -> bool:
+        tasks = self.data["tasks"].get(self.key(day), [])
+        return bool(tasks) and all(task.get("done") for task in tasks)
+
+    def streak(self, until: date | None = None) -> int:
+        cursor, count = until or date.today(), 0
+        from datetime import timedelta
+        while self.completed(cursor):
+            count += 1
+            cursor -= timedelta(days=1)
+        return count
+
+    def save_settings(self, study: int, rest: int, capture: int, speed: int) -> None:
+        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed}
+        self.save()
