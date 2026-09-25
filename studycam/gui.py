@@ -22,9 +22,16 @@ from .schedule import StudyStore
 APP_STYLE = """
 QWidget { font-family: 'Malgun Gothic'; font-size: 13px; color: #213547; }
 QMainWindow,QDialog { background:#f6f8fb; } QPushButton { background:#5068e8;color:white;border:0;border-radius:8px;padding:9px 14px;font-weight:600; }
-QPushButton[secondary='true'] { background:white;color:#5068e8;border:1px solid #cdd5ff; }
+QPushButton:hover { background:#6d81f1; } QPushButton:disabled { background:#e8ebf2;color:#9ca6b7;border:1px solid #dde2eb; }
+QPushButton[secondary='true'] { background:white;color:#5068e8;border:1px solid #cdd5ff; } QPushButton[secondary='true']:hover { background:#edf1ff;color:#3048c7;border-color:#8da0ff; }
+QPushButton[secondary='true']:disabled { background:#e8ebf2;color:#9ca6b7;border:1px solid #dde2eb; }
 QFrame[card='true'] { background:white;border:1px solid #e4e8f0;border-radius:12px; }
 QListWidget,QTableWidget { background:white;border:1px solid #e4e8f0;border-radius:8px; }
+QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox { background:#ffffff;color:#213547;border:1px solid #cfd6e3;border-radius:6px;padding:5px;selection-background-color:#dce5ff;selection-color:#213547; }
+QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus { background:#ffffff;border:2px solid #5068e8; }
+QComboBox QAbstractItemView { background:#ffffff;color:#213547;selection-background-color:#dce5ff;selection-color:#213547;border:1px solid #cfd6e3; }
+QTableWidget::item:selected { background:#dce5ff;color:#213547;border:1px solid #5068e8; }
+QCheckBox { color:#213547;spacing:7px; } QCheckBox:hover { color:#5068e8; } QCheckBox::indicator { width:16px;height:16px;border:1px solid #71809a;border-radius:4px;background:#ffffff; } QCheckBox::indicator:hover { border:2px solid #5068e8;background:#edf1ff; } QCheckBox::indicator:checked { background:#5068e8;border-color:#5068e8; }
 QHeaderView::section { background:#eff2ff;border:0;padding:7px;font-weight:600; }
 QCalendarWidget QWidget,QCalendarWidget QTableView { background:#273246;color:#f7f9ff; }
 QCalendarWidget QToolButton { color:#fff;background:#364563;border-radius:6px;padding:6px; }
@@ -62,9 +69,12 @@ class SettingsDialog(QDialog):
         self.storage_dir=QLineEdit(s["storage_dir"]); self.storage_dir.setReadOnly(True)
         self.alarm_enabled=QCheckBox("집중·휴식 전환 시 알람음 재생"); self.alarm_enabled.setChecked(s["alarm_enabled"])
         self.alarm_volume=QSpinBox(); self.alarm_volume.setRange(0,100); self.alarm_volume.setSuffix("%"); self.alarm_volume.setValue(s["alarm_volume"])
+        self.start_maximized=QCheckBox("다음 앱 실행 시 창 최대화"); self.start_maximized.setChecked(s["start_maximized"])
+        self.completed_color=QLineEdit(s["completed_color"]); self.completed_color.setPlaceholderText("#dce8ff")
+        self.failed_color=QLineEdit(s["failed_color"]); self.failed_color.setPlaceholderText("#ffd9d9")
         choose, open_dir = secondary("폴더 선택"), secondary("폴더 열기"); choose.clicked.connect(self.choose_folder); open_dir.clicked.connect(self.open_folder)
         folder=QHBoxLayout(); folder.addWidget(self.storage_dir,1); folder.addWidget(choose); folder.addWidget(open_dir)
-        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume)
+        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
     def choose_folder(self):
         selected=QFileDialog.getExistingDirectory(self,"저장 폴더 선택",self.storage_dir.text())
@@ -73,7 +83,10 @@ class SettingsDialog(QDialog):
         folder=Path(self.storage_dir.text()); folder.mkdir(parents=True,exist_ok=True); QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
     def save(self):
         folder=Path(self.storage_dir.text()); folder.mkdir(parents=True,exist_ok=True)
-        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value()); self.accept()
+        completed, failed = self.completed_color.text().strip(), self.failed_color.text().strip()
+        if not QColor(completed).isValid() or not QColor(failed).isValid():
+            QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
+        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value(),completed,failed,self.start_maximized.isChecked()); self.accept()
 
 
 class ScheduleDialog(QDialog):
@@ -132,13 +145,12 @@ class Planner(QWidget):
             item=QListWidgetItem(f"[{task['kind']}] {task['subject']} — {task['text']}"); flags=item.flags()|Qt.ItemIsUserCheckable
             if not can_check: flags &= ~Qt.ItemIsEnabled
             item.setFlags(flags); item.setCheckState(Qt.Checked if task.get("done") else Qt.Unchecked); self.list.addItem(item)
-        for widget in (self.subject,self.goal,self.kind,self.add,self.recommend_button,self.delete): widget.setEnabled(can_check)
         if not can_check: self.title.setText(self.title.text()+"  (지난 날짜: 완료 상태 변경 불가)")
         self.loading=False
     def add_task(self):
         subject=self.subject.currentText().strip()
         if subject=="직접 입력": subject="과목"
-        if self.editable() and self.goal.text().strip(): self.store.add_task(self.day,subject,self.goal.text(),self.kind.currentText()); self.goal.clear(); self.reload(); self.refresh_calendar()
+        if self.goal.text().strip(): self.store.add_task(self.day,subject,self.goal.text(),self.kind.currentText()); self.goal.clear(); self.reload(); self.refresh_calendar()
     def save_checks(self,_):
         if self.loading or not self.editable(): return
         tasks=self.store.tasks_for(self.day)
@@ -146,7 +158,7 @@ class Planner(QWidget):
         self.store.update_tasks(self.day,tasks); self.refresh_calendar()
     def delete_task(self):
         row=self.list.currentRow()
-        if self.editable() and row>=0: tasks=self.store.tasks_for(self.day); tasks.pop(row); self.store.update_tasks(self.day,tasks); self.reload(); self.refresh_calendar()
+        if row>=0: tasks=self.store.tasks_for(self.day); tasks.pop(row); self.store.update_tasks(self.day,tasks); self.reload(); self.refresh_calendar()
     def recommend(self):
         existing={(t["subject"],t["kind"]) for t in self.store.tasks_for(self.day)}; additions=[]; previous=self.day-timedelta(days=1)
         for item in self.store.data["schedule"]:
@@ -227,17 +239,22 @@ class HomePage(QWidget):
         super().__init__(); self.store=store; self.selected_day=date.today(); self.studio=None; layout=QVBoxLayout(self); layout.setContentsMargins(42,30,42,34)
         header=QHBoxLayout(); title=QLabel("StudyCam"); title.setStyleSheet("font-size:30px;font-weight:800;color:#3446b8;"); self.streak_label=QLabel(); start=QPushButton("스터디 캠 실행하기"); header.addWidget(title); header.addSpacing(20); header.addWidget(self.streak_label); header.addStretch(); header.addWidget(start); layout.addLayout(header); layout.addWidget(QLabel("날짜를 선택하면 그날의 목표와 만들어진 공부 영상을 확인할 수 있습니다."))
         card=QFrame(); card.setProperty("card",True); card_layout=QVBoxLayout(card); self.calendar=QCalendarWidget(); self.calendar.setGridVisible(True); self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumHeight(510); card_layout.addWidget(self.calendar); layout.addWidget(card,1)
-        bottom=QHBoxLayout(); self.detail=QLabel(); planner=secondary("선택한 날짜의 플래너 열기"); schedule=secondary("과목·시간표 설정"); videos=secondary("선택 날짜 영상 열기"); bottom.addWidget(self.detail); bottom.addStretch(); bottom.addWidget(videos); bottom.addWidget(schedule); bottom.addWidget(planner); layout.addLayout(bottom)
-        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_planner); schedule.clicked.connect(self.open_schedule); videos.clicked.connect(self.open_video); self.calendar.selectionChanged.connect(self.select_day); self.calendar.setSelectedDate(qdate(self.selected_day)); self.refresh()
+        bottom=QHBoxLayout(); self.detail=QLabel(); planner=secondary("선택한 날짜의 플래너 열기"); schedule=secondary("과목·시간표 설정"); self.videos_button=secondary("선택 날짜 영상 열기"); bottom.addWidget(self.detail); bottom.addStretch(); bottom.addWidget(self.videos_button); bottom.addWidget(schedule); bottom.addWidget(planner); layout.addLayout(bottom)
+        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_planner); schedule.clicked.connect(self.open_schedule); self.videos_button.clicked.connect(self.open_video); self.calendar.selectionChanged.connect(self.select_day); self.calendar.setSelectedDate(qdate(self.selected_day)); self.refresh()
     def refresh(self):
-        self.streak_label.setText(f"{self.store.streak()}일째 공부 목표 달성 중!"); completed=QTextCharFormat(); completed.setBackground(QColor("#dce8ff")); completed.setForeground(QColor("#1f3ea8")); year,month=self.calendar.yearShown(),self.calendar.monthShown()
+        self.streak_label.setText(f"{self.store.streak()}일째 공부 목표 달성 중!"); settings=self.store.data["settings"]; completed=QTextCharFormat(); completed.setBackground(QColor(settings["completed_color"])); completed.setForeground(QColor("#1f3ea8")); failed=QTextCharFormat(); failed.setBackground(QColor(settings["failed_color"])); failed.setForeground(QColor("#a41525")); year,month=self.calendar.yearShown(),self.calendar.monthShown()
         for n in range(1,QDate(year,month,1).daysInMonth()+1): self.calendar.setDateTextFormat(QDate(year,month,n),QTextCharFormat())
         for key in self.store.data["tasks"]:
             day=date.fromisoformat(key)
             if self.store.completed(day): self.calendar.setDateTextFormat(qdate(day),completed)
+        started=date.fromisoformat(self.store.data["started_on"])
+        cursor=started
+        while cursor < date.today():
+            if not self.store.completed(cursor): self.calendar.setDateTextFormat(qdate(cursor),failed)
+            cursor += timedelta(days=1)
         self.select_day()
     def select_day(self):
-        self.selected_day=pydate(self.calendar.selectedDate()); tasks=self.store.tasks_for(self.selected_day); videos=self.store.data["videos"].get(self.store.key(self.selected_day),[]); self.detail.setText(f"{self.selected_day:%m월 %d일}: 목표 {len(tasks)}개 · 완료 {sum(t.get('done',False) for t in tasks)}개 · 영상 {len(videos)}개")
+        self.selected_day=pydate(self.calendar.selectedDate()); tasks=self.store.tasks_for(self.selected_day); videos=self.store.data["videos"].get(self.store.key(self.selected_day),[]); has_video=bool(videos); self.videos_button.setEnabled(has_video); self.videos_button.setProperty("secondary",not has_video); self.videos_button.style().unpolish(self.videos_button); self.videos_button.style().polish(self.videos_button); self.detail.setText(f"{self.selected_day:%m월 %d일}: 목표 {len(tasks)}개 · 완료 {sum(t.get('done',False) for t in tasks)}개 · 영상 {len(videos)}개")
     def open_schedule(self):
         if ScheduleDialog(self.store,self).exec(): self.refresh()
     def open_studio(self):
@@ -250,6 +267,6 @@ class HomePage(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(videos[-1]))
 
 def main():
-    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setStyleSheet(APP_STYLE); window=QMainWindow(); window.setWindowTitle("StudyCam"); window.resize(980,720); window.setCentralWidget(HomePage(StudyStore())); window.show(); sys.exit(app.exec())
+    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setStyleSheet(APP_STYLE); store=StudyStore(); window=QMainWindow(); window.setWindowTitle("StudyCam"); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
 
 if __name__ == "__main__": main()
