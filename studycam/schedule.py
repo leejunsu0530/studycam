@@ -8,7 +8,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-DEFAULT_DATA: dict[str, Any] = {"tasks": {}, "schedule": [], "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20}, "videos": {}}
+DEFAULT_DATA: dict[str, Any] = {
+    "tasks": {}, "subjects": [], "schedule": [],
+    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70},
+    "videos": {},
+}
 
 
 class StudyStore:
@@ -55,6 +59,6 @@ class StudyStore:
             cursor -= timedelta(days=1)
         return count
 
-    def save_settings(self, study: int, rest: int, capture: float, speed: int) -> None:
-        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed}
+    def save_settings(self, study: int, rest: int, capture: float, speed: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int) -> None:
+        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume}
         self.save()
