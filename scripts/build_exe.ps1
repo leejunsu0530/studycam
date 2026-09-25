@@ -9,6 +9,7 @@ $bundleMode = if ($OneFile) { "--onefile" } else { "--onedir" }
     --noconfirm --clean --windowed $bundleMode `
     --name "StudyCam" `
     --icon "assets\studycam.ico" `
+    --add-data "assets\studycam.ico:assets" `
     --hidden-import PySide6.QtMultimedia `
     --hidden-import cv2 `
     --paths . `

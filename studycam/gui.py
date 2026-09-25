@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QTimer, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QImage, QPixmap, QTextCharFormat
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QImage, QPixmap, QTextCharFormat
 from PySide6.QtMultimedia import QSoundEffect
 from PySide6.QtWidgets import (QApplication, QCalendarWidget, QComboBox, QDialog,
     QCheckBox, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
@@ -43,6 +43,11 @@ def qdate(day: date) -> QDate: return QDate(day.year, day.month, day.day)
 def pydate(day: QDate) -> date: return date(day.year(), day.month(), day.day())
 def secondary(text: str) -> QPushButton:
     button = QPushButton(text); button.setProperty("secondary", True); return button
+
+def app_icon() -> QIcon:
+    """Return the bundled icon both from source and from a PyInstaller build."""
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return QIcon(str(root / "assets" / "studycam.ico"))
 
 def ensure_alarm_tone(directory: Path) -> Path:
     """Create a small bundled-at-runtime WAV tone without an external asset."""
@@ -185,7 +190,7 @@ class PlannerViewer(QDialog):
 class StudioWindow(QMainWindow):
     def __init__(self,store:StudyStore,chosen_day:date,refresh_home):
         super().__init__(); self.store,self.refresh_home,self.day=store,refresh_home,chosen_day; self.camera=self.new_camera(); self.images=[]; self.recording=False; self.in_break=False; self.remaining=0; self.current_frame=None; self.alarm=QSoundEffect(self); self.configure_alarm()
-        self.setWindowTitle("StudyCam — 스터디 캠"); self.resize(1180,760); root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
+        self.setWindowTitle("StudyCam — 스터디 캠"); self.setWindowIcon(app_icon()); self.resize(1180,760); root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
         top=QHBoxLayout(); self.timer_label=QLabel(); self.timer_label.setStyleSheet("font-size:55px;font-weight:800;color:#3446b8;"); self.state_label=QLabel("촬영을 시작하면 카메라가 켜집니다."); settings=secondary("설정"); top.addWidget(self.timer_label); top.addWidget(self.state_label); top.addStretch(); top.addWidget(settings); outer.addLayout(top)
         splitter=QSplitter(); outer.addWidget(splitter,1); left=QWidget(); left_layout=QVBoxLayout(left); self.preview=QLabel("카메라 미리보기"); self.preview.setAlignment(Qt.AlignCenter); self.preview.setMinimumSize(520,390); self.preview.setStyleSheet("background:#202536;color:#dce3ff;border-radius:12px;font-size:16px;"); left_layout.addWidget(self.preview)
         controls=QHBoxLayout(); self.record_button=QPushButton("촬영 시작"); self.pomodoro_button=secondary("뽀모도로 시작"); self.finish=secondary("영상 만들기"); controls.addWidget(self.record_button); controls.addWidget(self.pomodoro_button); controls.addWidget(self.finish); left_layout.addLayout(controls); splitter.addWidget(left); self.planner=Planner(store,chosen_day,refresh_home); splitter.addWidget(self.planner); splitter.setSizes([650,450])
@@ -276,6 +281,6 @@ class HomePage(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(videos[-1]))
 
 def main():
-    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setStyleSheet(APP_STYLE); store=StudyStore(); window=QMainWindow(); window.setWindowTitle("StudyCam"); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
+    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setWindowIcon(app_icon()); app.setStyleSheet(APP_STYLE); store=StudyStore(); window=QMainWindow(); window.setWindowTitle("StudyCam"); window.setWindowIcon(app_icon()); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
 
 if __name__ == "__main__": main()
