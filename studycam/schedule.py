@@ -10,7 +10,7 @@ from typing import Any
 
 DEFAULT_DATA: dict[str, Any] = {
     "tasks": {}, "subjects": [], "schedule": [], "started_on": date.today().isoformat(), "study_seconds": {},
-    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "daily_study_minutes": 0, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False},
+    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False},
     "videos": {},
 }
 
@@ -30,6 +30,8 @@ class StudyStore:
             if saved.get("settings", {}).get("prevent_window_close"):
                 merged["settings"]["prevent_home_close"] = True
                 merged["settings"]["prevent_studio_close"] = True
+            for tasks in merged["tasks"].values():
+                tasks[:] = [task for task in tasks if task.get("system") != "daily_study_time"]
             return merged
         except (OSError, json.JSONDecodeError):
             return deepcopy(DEFAULT_DATA)
@@ -62,20 +64,7 @@ class StudyStore:
             return
         key = self.key(day)
         self.data["study_seconds"][key] = self.study_seconds_for(day) + seconds
-        self.sync_daily_study_goal(day)
         self.save()
-
-    def sync_daily_study_goal(self, day: date) -> None:
-        """Maintain the non-editable daily total-study goal for one date."""
-        target_seconds = int(self.data["settings"]["daily_study_minutes"]) * 60
-        tasks = self.tasks_for(day)
-        existing = [task for task in tasks if task.get("system") == "daily_study_time"]
-        tasks[:] = [task for task in tasks if task.get("system") != "daily_study_time"]
-        if target_seconds:
-            elapsed = self.study_seconds_for(day)
-            task = existing[0] if existing else {}
-            task.update({"system": "daily_study_time", "subject": "총 공부 시간", "kind": "자율", "text": f"오늘 {target_seconds // 60}분 공부하기 ({elapsed // 60:02}:{elapsed % 60:02} / {target_seconds // 60:02}:00)", "target_seconds": target_seconds, "done": elapsed >= target_seconds})
-            tasks.append(task)
 
     def streak(self, until: date | None = None) -> int:
         cursor, count = until or date.today(), 0
@@ -85,7 +74,6 @@ class StudyStore:
             cursor -= timedelta(days=1)
         return count
 
-    def save_settings(self, study: int, rest: int, capture: float, speed: int, daily_study: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int, completed_color: str, failed_color: str, start_maximized: bool, pomodoro_with_camera: bool, prevent_home_close: bool, prevent_studio_close: bool) -> None:
-        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "daily_study_minutes": daily_study, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume, "completed_color": completed_color, "failed_color": failed_color, "start_maximized": start_maximized, "pomodoro_with_camera": pomodoro_with_camera, "prevent_home_close": prevent_home_close, "prevent_studio_close": prevent_studio_close}
-        self.sync_daily_study_goal(date.today())
+    def save_settings(self, study: int, rest: int, capture: float, speed: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int, completed_color: str, failed_color: str, start_maximized: bool, pomodoro_with_camera: bool, prevent_home_close: bool, prevent_studio_close: bool) -> None:
+        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume, "completed_color": completed_color, "failed_color": failed_color, "start_maximized": start_maximized, "pomodoro_with_camera": pomodoro_with_camera, "prevent_home_close": prevent_home_close, "prevent_studio_close": prevent_studio_close}
         self.save()
