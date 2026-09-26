@@ -44,6 +44,16 @@ def pydate(day: QDate) -> date: return date(day.year(), day.month(), day.day())
 def secondary(text: str) -> QPushButton:
     button = QPushButton(text); button.setProperty("secondary", True); return button
 
+def can_close_window(parent: QWidget, store: StudyStore) -> bool:
+    """Respect the close-lock setting and ask before closing an app window."""
+    if store.data["settings"]["prevent_window_close"]:
+        QMessageBox.information(parent, "창 닫기 방지", "설정에서 창 닫기 방지가 켜져 있어 창을 닫을 수 없습니다.")
+        return False
+    return QMessageBox.question(
+        parent, "창 닫기", "정말 창을 닫으시겠습니까?",
+        QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+    ) == QMessageBox.Yes
+
 def app_icon() -> QIcon:
     """Return the bundled icon both from source and from a PyInstaller build."""
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -77,11 +87,12 @@ class SettingsDialog(QDialog):
         self.alarm_volume=QSpinBox(); self.alarm_volume.setRange(0,100); self.alarm_volume.setSuffix("%"); self.alarm_volume.setValue(s["alarm_volume"])
         self.start_maximized=QCheckBox("다음 앱 실행 시 창 최대화"); self.start_maximized.setChecked(s["start_maximized"])
         self.pomodoro_with_camera=QCheckBox("촬영 시작 시 뽀모도로도 자동 시작"); self.pomodoro_with_camera.setChecked(s["pomodoro_with_camera"])
+        self.prevent_window_close=QCheckBox("창 닫기 방지 (닫기 버튼을 눌러도 앱 창 유지)"); self.prevent_window_close.setChecked(s["prevent_window_close"])
         self.completed_color=QLineEdit(s["completed_color"]); self.completed_color.setPlaceholderText("#dce8ff")
         self.failed_color=QLineEdit(s["failed_color"]); self.failed_color.setPlaceholderText("#ffd9d9")
         choose, open_dir = secondary("폴더 선택"), secondary("폴더 열기"); choose.clicked.connect(self.choose_folder); open_dir.clicked.connect(self.open_folder)
         folder=QHBoxLayout(); folder.addWidget(self.storage_dir,1); folder.addWidget(choose); folder.addWidget(open_dir)
-        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera)
+        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_window_close)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
     def choose_folder(self):
         selected=QFileDialog.getExistingDirectory(self,"저장 폴더 선택",self.storage_dir.text())
@@ -93,7 +104,7 @@ class SettingsDialog(QDialog):
         completed, failed = self.completed_color.text().strip(), self.failed_color.text().strip()
         if not QColor(completed).isValid() or not QColor(failed).isValid():
             QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
-        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value(),completed,failed,self.start_maximized.isChecked(),self.pomodoro_with_camera.isChecked()); self.accept()
+        self.store.save_settings(self.study.value(),self.rest.value(),self.capture.value(),self.speed.value(),str(folder),self.alarm_enabled.isChecked(),self.alarm_volume.value(),completed,failed,self.start_maximized.isChecked(),self.pomodoro_with_camera.isChecked(),self.prevent_window_close.isChecked()); self.accept()
 
 
 class ScheduleDialog(QDialog):
@@ -241,7 +252,9 @@ class StudioWindow(QMainWindow):
             return
         self.store.data["videos"].setdefault(self.store.key(self.day),[]).append(str(video)); self.store.save(); self.images.clear(); self.current_frame=None
         if announce: QMessageBox.information(self,"영상 완성",f"타임랩스가 자동 저장되었습니다.\n{video}")
-    def closeEvent(self,event): self.recording=False; self.clock.stop(); self.finalize_recording(); self.refresh_home(); event.accept()
+    def closeEvent(self,event):
+        if not can_close_window(self, self.store): event.ignore(); return
+        self.recording=False; self.clock.stop(); self.finalize_recording(); self.refresh_home(); event.accept()
 
 
 class HomePage(QWidget):
@@ -280,7 +293,16 @@ class HomePage(QWidget):
         if not videos: QMessageBox.information(self,"공부 영상","이 날짜에 생성된 공부 영상이 없습니다."); return
         QDesktopServices.openUrl(QUrl.fromLocalFile(videos[-1]))
 
+
+class HomeWindow(QMainWindow):
+    def __init__(self, store: StudyStore):
+        super().__init__(); self.store = store
+
+    def closeEvent(self, event):
+        if can_close_window(self, self.store): event.accept()
+        else: event.ignore()
+
 def main():
-    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setWindowIcon(app_icon()); app.setStyleSheet(APP_STYLE); store=StudyStore(); window=QMainWindow(); window.setWindowTitle("StudyCam"); window.setWindowIcon(app_icon()); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
+    app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setWindowIcon(app_icon()); app.setStyleSheet(APP_STYLE); store=StudyStore(); window=HomeWindow(store); window.setWindowTitle("StudyCam"); window.setWindowIcon(app_icon()); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
 
 if __name__ == "__main__": main()
