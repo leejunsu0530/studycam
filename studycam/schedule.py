@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
 DEFAULT_DATA: dict[str, Any] = {
     "tasks": {}, "subjects": [], "schedule": [], "started_on": date.today().isoformat(), "study_seconds": {},
-    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False},
-    "videos": {},
+    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False, "timestamp_format": "HH:MM", "day_lock_hour": 12, "youtube_auto_upload": False, "youtube_client_secret": "", "youtube_title_template": "StudyCam {date}", "youtube_privacy": "private"},
+    "videos": {}, "daily_videos": {}, "youtube_uploads": {},
 }
 
 
@@ -56,6 +56,12 @@ class StudyStore:
         tasks = self.data["tasks"].get(self.key(day), [])
         return bool(tasks) and all(task.get("done") for task in tasks)
 
+    def is_day_locked(self, day: date, now: datetime | None = None) -> bool:
+        """A day's planner locks at the configured hour on the following day."""
+        now = now or datetime.now()
+        hour = int(self.data["settings"]["day_lock_hour"])
+        return now >= datetime.combine(day + timedelta(days=1), time(hour=hour))
+
     def study_seconds_for(self, day: date) -> int:
         return int(self.data["study_seconds"].get(self.key(day), 0))
 
@@ -74,6 +80,7 @@ class StudyStore:
             cursor -= timedelta(days=1)
         return count
 
-    def save_settings(self, study: int, rest: int, capture: float, speed: int, storage_dir: str, alarm_enabled: bool, alarm_volume: int, completed_color: str, failed_color: str, start_maximized: bool, pomodoro_with_camera: bool, prevent_home_close: bool, prevent_studio_close: bool) -> None:
-        self.data["settings"] = {"study_minutes": study, "break_minutes": rest, "capture_seconds": capture, "speed": speed, "storage_dir": storage_dir, "alarm_enabled": alarm_enabled, "alarm_volume": alarm_volume, "completed_color": completed_color, "failed_color": failed_color, "start_maximized": start_maximized, "pomodoro_with_camera": pomodoro_with_camera, "prevent_home_close": prevent_home_close, "prevent_studio_close": prevent_studio_close}
+    def save_settings(self, **settings: Any) -> None:
+        """Persist complete settings while preserving migration defaults."""
+        self.data["settings"] = {**DEFAULT_DATA["settings"], **settings}
         self.save()

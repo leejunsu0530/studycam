@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "studycam"
-version = "1.3.0"
+version = "1.4.0"
 description = "A desktop study planner with a study camera and time-lapse recorder."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,11 @@ dependencies = ["PySide6>=6.7", "opencv-python>=4.10"]
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+youtube = [
+  "google-api-python-client>=2.0",
+  "google-auth-oauthlib>=1.0",
+  "google-auth-httplib2>=0.2",
+]
 
 [project.urls]
 Homepage = "https://github.com/leejunsu0530/studycam"

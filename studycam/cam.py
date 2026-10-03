@@ -46,6 +46,9 @@ class CameraService:
             self.cap = None
 
     def make_timelapse(self, images: list[Path], speed: int = 20) -> Path | None:
+        return self.make_timelapse_with_timestamp(images, speed)
+
+    def make_timelapse_with_timestamp(self, images: list[Path], speed: int = 20, timestamp_format: str = "HH:MM") -> Path | None:
         valid = [path for path in images if path.exists()]
         if not valid:
             return None
@@ -59,7 +62,51 @@ class CameraService:
             for path in valid:
                 frame = cv2.imread(str(path))
                 if frame is not None:
+                    self._draw_timestamp(frame, path, timestamp_format)
                     writer.write(cv2.resize(frame, (width, height)))
         finally:
             writer.release()
         return output
+
+    @staticmethod
+    def _draw_timestamp(frame, path: Path, timestamp_format: str) -> None:
+        try:
+            captured = datetime.strptime(path.stem, "%Y%m%d_%H%M%S_%f")
+        except ValueError:
+            captured = datetime.now()
+        if timestamp_format == "HH:MM:SS":
+            label = captured.strftime("%H:%M:%S")
+        elif timestamp_format == "12H":
+            label = f"{'AM' if captured.hour < 12 else 'PM'} {(captured.hour - 1) % 12 + 1}:{captured:%M}"
+        else:
+            label = captured.strftime("%H:%M")
+        height, width = frame.shape[:2]
+        scale = max(0.55, width / 1400)
+        origin = (int(width * 0.04), height - int(height * 0.05))
+        cv2.putText(frame, label, origin, cv2.FONT_HERSHEY_SIMPLEX, scale, (15, 15, 15), max(3, int(scale * 5)), cv2.LINE_AA)
+        cv2.putText(frame, label, origin, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), max(1, int(scale * 2)), cv2.LINE_AA)
+
+    def combine_videos(self, videos: list[Path], output: Path) -> Path | None:
+        """Combine same-day time-lapses into one video, preserving stamped frames."""
+        valid = [video for video in videos if video.exists()]
+        if not valid:
+            return None
+        first = cv2.VideoCapture(str(valid[0])); ok, frame = first.read()
+        fps = first.get(cv2.CAP_PROP_FPS) or 20
+        first.release()
+        if not ok:
+            return None
+        height, width = frame.shape[:2]
+        writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+        try:
+            for video in valid:
+                capture = cv2.VideoCapture(str(video))
+                while True:
+                    ok, frame = capture.read()
+                    if not ok:
+                        break
+                    writer.write(cv2.resize(frame, (width, height)))
+                capture.release()
+        finally:
+            writer.release()
+        return output if output.exists() else None

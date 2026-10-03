@@ -12,6 +12,10 @@ $bundleMode = if ($OneFile) { "--onefile" } else { "--onedir" }
     --add-data "assets\studycam.ico:assets" `
     --hidden-import PySide6.QtMultimedia `
     --hidden-import cv2 `
+    --collect-all googleapiclient `
+    --hidden-import google_auth_oauthlib.flow `
+    --hidden-import google.oauth2.credentials `
+    --hidden-import google.auth.transport.requests `
     --paths . `
     "studycam_launcher.py"
 

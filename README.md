@@ -98,8 +98,12 @@ studycam
 개발 환경에서 폴더형 배포본을 만들려면 다음을 실행합니다. 결과물은 `dist\StudyCam\StudyCam.exe`에 생성됩니다.
 
 ```powershell
-pip install ".[build]"
+pip install ".[build,youtube]"
 .\scripts\build_exe.ps1
 ```
 
 단일 실행 파일이 필요하면 `.\scripts\build_exe.ps1 -OneFile`을 사용할 수 있습니다. 기본 폴더형(`onedir`) 배포는 실행이 빠르고 릴리즈 ZIP 배포에 권장됩니다.
+
+## YouTube 자동 업로드 설정
+
+설정에서 Google Cloud의 **YouTube Data API v3**를 활성화한 뒤, Desktop OAuth 클라이언트 JSON 파일을 선택하고 `Google 로그인`을 누르세요. 로그인과 업로드 권한 승인은 시스템 브라우저에서 처리되며, 비밀번호는 앱에 저장되지 않습니다. 자동 업로드를 켜면 수정 잠금 시간이 지난 하루 영상이 다음 앱 실행 시 하나의 영상으로 업로드됩니다. 새롭고 미검증된 Google API 프로젝트의 업로드 영상은 YouTube 정책상 비공개로 제한될 수 있습니다.
