@@ -93,7 +93,9 @@ def ensure_alarm_tone(directory: Path) -> Path:
 class SettingsDialog(QDialog):
     def __init__(self, store: StudyStore, parent=None):
         super().__init__(parent); self.store = store; self.setWindowTitle("공부 및 촬영 설정")
-        form = QFormLayout(self); s = store.data["settings"]
+        self.resize(760, 720)
+        outer=QVBoxLayout(self); scroll=QScrollArea(); scroll.setWidgetResizable(True); outer.addWidget(scroll)
+        content=QWidget(); scroll.setWidget(content); form = QFormLayout(content); s = store.data["settings"]
         self.study, self.rest, self.speed = (QSpinBox() for _ in range(3))
         for box, value, maximum in ((self.study,s["study_minutes"],360),(self.rest,s["break_minutes"],180),(self.speed,s["speed"],120)):
             box.setRange(1, maximum); box.setValue(value)
