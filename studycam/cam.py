@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import cv2
@@ -11,9 +11,11 @@ import cv2
 class CameraService:
     """Keeps the webcam open only while a recording session is active."""
 
-    def __init__(self, directory: Path | None = None, camera_index: int = 0, resolution: tuple[int, int] | None = None) -> None:
-        self.directory = directory or Path.home() / ".studycam" / "captures"
-        self.directory.mkdir(parents=True, exist_ok=True)
+    def __init__(self, capture_directory: Path | None = None, video_directory: Path | None = None, camera_index: int = 0, resolution: tuple[int, int] | None = None) -> None:
+        self.capture_directory = capture_directory or Path.home() / ".studycam" / "captures"
+        self.video_directory = video_directory or Path.home() / ".studycam" / "media"
+        self.capture_directory.mkdir(parents=True, exist_ok=True)
+        self.video_directory.mkdir(parents=True, exist_ok=True)
         self.camera_index = camera_index
         self.resolution = resolution
         self.cap: cv2.VideoCapture | None = None
@@ -48,8 +50,27 @@ class CameraService:
     def save_frame(self, frame) -> Path | None:
         if frame is None:
             return None
-        path = self.directory / f"{datetime.now():%Y%m%d_%H%M%S_%f}.jpg"
+        path = self.capture_directory / f"{datetime.now():%Y%m%d_%H%M%S_%f}.png"
         return path if cv2.imwrite(str(path), frame) else None
+
+    def cleanup_old_captures(self, before: date | None = None) -> int:
+        """Remove raw captures from dates before *before* (today by default)."""
+        cutoff = before or date.today()
+        removed = 0
+        for path in self.capture_directory.iterdir():
+            if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+                continue
+            try:
+                captured_day = datetime.strptime(path.stem[:8], "%Y%m%d").date()
+            except ValueError:
+                captured_day = datetime.fromtimestamp(path.stat().st_mtime).date()
+            if captured_day < cutoff:
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
 
     def stop(self) -> None:
         if self.cap is not None:
@@ -67,7 +88,7 @@ class CameraService:
         if first is None:
             return None
         height, width = first.shape[:2]
-        output = self.directory / f"study_{datetime.now():%Y%m%d_%H%M%S}.mp4"
+        output = self.video_directory / f"study_{datetime.now():%Y%m%d_%H%M%S}.mp4"
         writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), max(1, speed), (width, height))
         try:
             for path in valid:
