@@ -249,15 +249,20 @@ class PlannerViewer(QDialog):
 
 class ClockWindow(QMainWindow):
     """A distraction-free display that mirrors the active study session."""
-    def __init__(self, studio):
-        super().__init__(studio); self.studio=studio; self.scale=1.0; self.setWindowTitle("StudyCam 큰 시계"); self.resize(620,360)
+    def __init__(self, studio=None):
+        # Do not parent this window to StudioWindow: it must survive its minimization.
+        super().__init__(); self.studio=studio; self.scale=1.0; self.setWindowTitle("StudyCam 큰 시계"); self.setWindowIcon(app_icon()); self.resize(620,360)
         root=QWidget(); self.setCentralWidget(root); layout=QVBoxLayout(root); controls=QHBoxLayout(); controls.addStretch(); smaller=secondary("−"); larger=secondary("+"); smaller.setFixedWidth(42); larger.setFixedWidth(42); controls.addWidget(smaller); controls.addWidget(larger); layout.addLayout(controls); layout.setAlignment(Qt.AlignCenter)
         self.now=QLabel(); self.pomodoro=QLabel(); self.daily=QLabel()
         for label in (self.now,self.pomodoro,self.daily): label.setAlignment(Qt.AlignCenter); layout.addWidget(label)
         smaller.clicked.connect(lambda: self.change_scale(-0.1)); larger.clicked.connect(lambda: self.change_scale(0.1)); self.timer=QTimer(self); self.timer.setInterval(250); self.timer.timeout.connect(self.refresh); self.timer.start(); self.refresh()
     def change_scale(self, amount): self.scale=max(0.6,min(2.2,self.scale+amount)); self.refresh()
     def refresh(self):
-        self.now.setText(time.strftime("%H:%M:%S")); self.pomodoro.setText(self.studio.timer_label.text()); self.daily.setText(f"{self.studio.session_prefix.text()} {self.studio.session_label.text()}")
+        self.now.setText(time.strftime("%H:%M:%S"))
+        if self.studio:
+            self.pomodoro.setText(self.studio.timer_label.text()); self.daily.setText(f"{self.studio.session_prefix.text()} {self.studio.session_label.text()}")
+        else:
+            self.pomodoro.setText("스터디 세션 없음"); self.daily.setText("카메라 창에서 뽀모도로를 시작하세요")
         self.now.setStyleSheet(f"font-size:{round(42*self.scale)}px;font-weight:700;"); self.pomodoro.setStyleSheet(f"font-size:{round(64*self.scale)}px;font-weight:800;color:{self.studio.timer_color};"); self.daily.setStyleSheet(f"font-size:{round(30*self.scale)}px;font-weight:700;color:#5068e8;")
     def closeEvent(self,event): event.accept()
 
@@ -333,9 +338,9 @@ class StudioWindow(QMainWindow):
         self.update_clock()
     def update_clock(self):
         self.timer_label.setText(f"{'휴식' if self.in_break else '집중'} {self.remaining//60:02}:{self.remaining%60:02}")
-        goal_name="오늘 총 공부" if self.study_goal_mode=="daily" else "이번 공부"
-        self.session_prefix.setText(f"{goal_name} 목표:" if not self.session_target_seconds else f"{goal_name} 남은 시간:")
-        self.session_label.setText("사용 안 함" if not self.session_target_seconds else format_seconds(max(0, self.session_target_seconds-self.session_elapsed_seconds)))
+        goal_name="오늘 총 공부 목표" if self.study_goal_mode=="daily" else "이번 공부 목표"
+        self.session_prefix.setText(f"{goal_name}:")
+        self.session_label.setText("사용 안 함" if not self.session_target_seconds else f"남은 {format_seconds(max(0, self.session_target_seconds-self.session_elapsed_seconds))}")
     def start_blink(self): self.blink_count=0; self.blink_timer.start()
     def blink_timer_label(self):
         self.blink_count+=1; self.timer_color="#ffffff" if self.blink_count % 2 else "#3446b8"; self.timer_label.setStyleSheet(f"font-size:55px;font-weight:800;color:{self.timer_color};")
@@ -373,15 +378,15 @@ class StudioWindow(QMainWindow):
 
 class HomePage(QWidget):
     def __init__(self,store:StudyStore):
-        super().__init__(); self.store=store; self.selected_day=date.today(); self.studio=None; layout=QVBoxLayout(self); layout.setContentsMargins(42,30,42,34)
-        header=QHBoxLayout(); title=QLabel("StudyCam"); title.setStyleSheet("font-size:30px;font-weight:800;color:#3446b8;"); self.streak_label=QLabel(); self.streak_label.setStyleSheet("font-size:21px;font-weight:800;color:#2563eb;"); self.streak_time_label=QLabel(); self.streak_time_label.setStyleSheet("font-size:18px;font-weight:800;color:white;background:#2563eb;padding:6px 10px;border-radius:7px;"); streak_row=QHBoxLayout(); streak_row.setSpacing(10); streak_row.addWidget(self.streak_label); streak_row.addWidget(self.streak_time_label); start=QPushButton("스터디 캠 실행하기"); settings=secondary("설정"); today=secondary("오늘"); header.addWidget(title); header.addSpacing(20); header.addLayout(streak_row); header.addStretch(); header.addWidget(today); header.addWidget(settings); header.addWidget(start); layout.addLayout(header); layout.addWidget(QLabel("날짜를 선택하면 그날의 목표와 만들어진 공부 영상을 확인할 수 있습니다."))
+        super().__init__(); self.store=store; self.selected_day=date.today(); self.studio=None; self.clock_window=None; layout=QVBoxLayout(self); layout.setContentsMargins(42,30,42,34)
+        header=QHBoxLayout(); title=QLabel("StudyCam"); title.setStyleSheet("font-size:30px;font-weight:800;color:#3446b8;"); self.streak_label=QLabel(); self.streak_label.setStyleSheet("font-size:21px;font-weight:800;color:#2563eb;"); self.streak_time_label=QLabel(); self.streak_time_label.setStyleSheet("font-size:18px;font-weight:800;color:white;background:#2563eb;padding:6px 10px;border-radius:7px;"); streak_row=QHBoxLayout(); streak_row.setSpacing(10); streak_row.addWidget(self.streak_label); streak_row.addWidget(self.streak_time_label); start=QPushButton("스터디 캠 실행하기"); settings=secondary("설정"); today=secondary("오늘"); clock=secondary("큰 시계"); header.addWidget(title); header.addSpacing(20); header.addLayout(streak_row); header.addStretch(); header.addWidget(today); header.addWidget(clock); header.addWidget(settings); header.addWidget(start); layout.addLayout(header); layout.addWidget(QLabel("날짜를 선택하면 그날의 목표와 만들어진 공부 영상을 확인할 수 있습니다."))
         weekly=QFrame(); weekly.setProperty("card",True); weekly_layout=QVBoxLayout(weekly); weekly_layout.addWidget(QLabel("이번 주 요일별 공부 시간")); week_row=QHBoxLayout(); self.week_labels=[]
         for weekday in ("월","화","수","목","금","토","일"):
             label=QLabel(weekday); label.setAlignment(Qt.AlignCenter); label.setMinimumHeight(48); label.setStyleSheet("background:#edf1ff;border-radius:7px;font-weight:700;"); self.week_labels.append(label); week_row.addWidget(label)
         weekly_layout.addLayout(week_row); layout.addWidget(weekly)
         card=QFrame(); card.setProperty("card",True); card_layout=QVBoxLayout(card); self.calendar=QCalendarWidget(); self.calendar.setGridVisible(True); self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumHeight(510); card_layout.addWidget(self.calendar); layout.addWidget(card,1)
         bottom=QHBoxLayout(); self.detail=QLabel(); planner=secondary("선택한 날짜의 플래너 열기"); schedule=secondary("과목·시간표 설정"); self.videos_button=secondary("선택 날짜 영상 열기"); bottom.addWidget(self.detail); bottom.addStretch(); bottom.addWidget(self.videos_button); bottom.addWidget(schedule); bottom.addWidget(planner); layout.addLayout(bottom)
-        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_planner); schedule.clicked.connect(self.open_schedule); self.videos_button.clicked.connect(self.open_video); settings.clicked.connect(self.open_settings); today.clicked.connect(self.go_today); self.calendar.selectionChanged.connect(self.select_day); self.calendar.setSelectedDate(qdate(self.selected_day)); self.refresh(); QTimer.singleShot(800, self.upload_ready_daily_videos)
+        start.clicked.connect(self.open_studio); planner.clicked.connect(self.open_planner); schedule.clicked.connect(self.open_schedule); self.videos_button.clicked.connect(self.open_video); settings.clicked.connect(self.open_settings); today.clicked.connect(self.go_today); clock.clicked.connect(self.open_clock); self.calendar.selectionChanged.connect(self.select_day); self.calendar.setSelectedDate(qdate(self.selected_day)); self.refresh(); QTimer.singleShot(800, self.upload_ready_daily_videos)
     def refresh(self):
         streak=self.store.streak(); self.streak_label.setText(f"{streak}일째 공부 목표 달성 중!"); total=0
         for offset in range(streak): total+=self.store.study_seconds_for(date.today()-timedelta(days=offset))
@@ -409,6 +414,9 @@ class HomePage(QWidget):
     def open_studio(self):
         if self.studio and self.studio.isVisible(): self.studio.raise_(); self.studio.activateWindow(); return
         self.studio=StudioWindow(self.store,self.selected_day,self.refresh); self.studio.show()
+    def open_clock(self):
+        if self.clock_window and self.clock_window.isVisible(): self.clock_window.raise_(); self.clock_window.activateWindow(); return
+        self.clock_window=ClockWindow(self.studio if self.studio else None); self.clock_window.show()
     def open_planner(self): PlannerViewer(self.store,self.selected_day,self).exec()
     def open_video(self):
         videos=self.store.data["videos"].get(self.store.key(self.selected_day),[])
