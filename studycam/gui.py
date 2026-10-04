@@ -93,9 +93,9 @@ def ensure_alarm_tone(directory: Path) -> Path:
 class SettingsDialog(QDialog):
     def __init__(self, store: StudyStore, parent=None):
         super().__init__(parent); self.store = store; self.setWindowTitle("공부 및 촬영 설정")
-        self.resize(760, 720)
-        outer=QVBoxLayout(self); scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame); scroll.setStyleSheet("QScrollArea, QScrollArea::viewport { background:#f6f8fb; }"); outer.addWidget(scroll)
-        content=QWidget(); content.setObjectName("settingsContent"); content.setStyleSheet("QWidget#settingsContent { background:#f6f8fb; }"); scroll.setWidget(content); form = QFormLayout(content); s = store.data["settings"]
+        self.resize(840, 720)
+        outer=QVBoxLayout(self); scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn); scroll.setViewportMargins(0, 0, 20, 0); scroll.setFrameShape(QFrame.NoFrame); scroll.setStyleSheet("QScrollArea, QScrollArea::viewport { background:#f6f8fb; }"); outer.addWidget(scroll)
+        content=QWidget(); content.setObjectName("settingsContent"); content.setStyleSheet("QWidget#settingsContent { background:#f6f8fb; }"); scroll.setWidget(content); form = QFormLayout(content); form.setContentsMargins(12, 12, 52, 12); s = store.data["settings"]
         self.study, self.rest, self.speed = (QSpinBox() for _ in range(3))
         for box, value, maximum in ((self.study,s["study_minutes"],360),(self.rest,s["break_minutes"],180),(self.speed,s["speed"],120)):
             box.setRange(1, maximum); box.setValue(value)
