@@ -260,10 +260,10 @@ class ClockWindow(QMainWindow):
     def refresh(self):
         self.now.setText(time.strftime("%H:%M:%S"))
         if self.studio:
-            self.pomodoro.setText(self.studio.timer_label.text()); self.daily.setText(f"{self.studio.session_prefix.text()} {self.studio.session_label.text()}")
+            self.pomodoro.setText(self.studio.timer_label.text()); self.daily.setText(f"{self.studio.session_prefix.text()} {self.studio.session_label.text()}"); timer_color=self.studio.timer_color
         else:
-            self.pomodoro.setText("스터디 세션 없음"); self.daily.setText("카메라 창에서 뽀모도로를 시작하세요")
-        self.now.setStyleSheet(f"font-size:{round(42*self.scale)}px;font-weight:700;"); self.pomodoro.setStyleSheet(f"font-size:{round(64*self.scale)}px;font-weight:800;color:{self.studio.timer_color};"); self.daily.setStyleSheet(f"font-size:{round(30*self.scale)}px;font-weight:700;color:#5068e8;")
+            self.pomodoro.setText("스터디 세션 없음"); self.daily.setText("카메라 창에서 뽀모도로를 시작하세요"); timer_color="#3446b8"
+        self.now.setStyleSheet(f"font-size:{round(42*self.scale)}px;font-weight:700;"); self.pomodoro.setStyleSheet(f"font-size:{round(64*self.scale)}px;font-weight:800;color:{timer_color};"); self.daily.setStyleSheet(f"font-size:{round(30*self.scale)}px;font-weight:700;color:#5068e8;")
     def closeEvent(self,event): event.accept()
 
 
@@ -340,7 +340,7 @@ class StudioWindow(QMainWindow):
         self.timer_label.setText(f"{'휴식' if self.in_break else '집중'} {self.remaining//60:02}:{self.remaining%60:02}")
         goal_name="오늘 총 공부 목표" if self.study_goal_mode=="daily" else "이번 공부 목표"
         self.session_prefix.setText(f"{goal_name}:")
-        self.session_label.setText("사용 안 함" if not self.session_target_seconds else f"남은 {format_seconds(max(0, self.session_target_seconds-self.session_elapsed_seconds))}")
+        self.session_label.setText("사용 안 함" if not self.session_target_seconds else format_seconds(max(0, self.session_target_seconds-self.session_elapsed_seconds)))
     def start_blink(self): self.blink_count=0; self.blink_timer.start()
     def blink_timer_label(self):
         self.blink_count+=1; self.timer_color="#ffffff" if self.blink_count % 2 else "#3446b8"; self.timer_label.setStyleSheet(f"font-size:55px;font-weight:800;color:{self.timer_color};")
