@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 import wave
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QTimer, Qt, QUrl
@@ -98,6 +98,10 @@ class SettingsDialog(QDialog):
         for box, value, maximum in ((self.study,s["study_minutes"],360),(self.rest,s["break_minutes"],180),(self.speed,s["speed"],120)):
             box.setRange(1, maximum); box.setValue(value)
         self.capture=QDoubleSpinBox(); self.capture.setRange(0.1,3600); self.capture.setSingleStep(0.1); self.capture.setDecimals(1); self.capture.setValue(float(s["capture_seconds"]))
+        self.camera_resolution=QComboBox(); self.camera_resolution.addItem("카메라 기본값", "default")
+        for label, value in (("HD · 1280 × 720 (권장)", "1280x720"), ("Full HD · 1920 × 1080", "1920x1080"), ("QHD · 2560 × 1440", "2560x1440"), ("4K · 3840 × 2160", "3840x2160")):
+            self.camera_resolution.addItem(label, value)
+        self.camera_resolution.setCurrentIndex(max(0, self.camera_resolution.findData(s["camera_resolution"])))
         self.storage_dir=QLineEdit(s["storage_dir"]); self.storage_dir.setReadOnly(True)
         self.alarm_enabled=QCheckBox("집중·휴식 전환 시 알람음 재생"); self.alarm_enabled.setChecked(s["alarm_enabled"])
         self.alarm_volume=QSpinBox(); self.alarm_volume.setRange(0,100); self.alarm_volume.setSuffix("%"); self.alarm_volume.setValue(s["alarm_volume"])
@@ -118,7 +122,7 @@ class SettingsDialog(QDialog):
         self.youtube_privacy=QComboBox(); self.youtube_privacy.addItem("비공개", "private"); self.youtube_privacy.addItem("미등록", "unlisted"); self.youtube_privacy.addItem("공개", "public"); self.youtube_privacy.setCurrentIndex(max(0, self.youtube_privacy.findData(s["youtube_privacy"])))
         choose, open_dir = secondary("폴더 선택"), secondary("폴더 열기"); choose.clicked.connect(self.choose_folder); open_dir.clicked.connect(self.open_folder)
         folder=QHBoxLayout(); folder.addWidget(self.storage_dir,1); folder.addWidget(choose); folder.addWidget(open_dir)
-        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상 시간 표시",self.timestamp_format); form.addRow("하루 수정 잠금",self.day_lock_hour); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_home_close); form.addRow("",self.prevent_studio_close); form.addRow("YouTube 자동 업로드",self.youtube_auto); form.addRow("YouTube OAuth",youtube_row); form.addRow("업로드 제목",self.youtube_title); form.addRow("업로드 공개 범위",self.youtube_privacy); form.addRow(QLabel("Google Cloud에서 YouTube Data API를 켜고 Desktop OAuth JSON을 선택하세요. 미검증 앱 업로드는 비공개일 수 있습니다."))
+        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("카메라 해상도",self.camera_resolution); form.addRow(QLabel("높을수록 시간 글씨와 영상은 선명하지만, 카메라가 지원하지 않으면 기본 해상도로 동작할 수 있고 PC 부담이 커집니다.")); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상 시간 표시",self.timestamp_format); form.addRow("하루 수정 잠금",self.day_lock_hour); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_home_close); form.addRow("",self.prevent_studio_close); form.addRow("YouTube 자동 업로드",self.youtube_auto); form.addRow("YouTube OAuth",youtube_row); form.addRow("업로드 제목",self.youtube_title); form.addRow("업로드 공개 범위",self.youtube_privacy); form.addRow(QLabel("Google Cloud에서 YouTube Data API를 켜고 Desktop OAuth JSON을 선택하세요. 미검증 앱 업로드는 비공개일 수 있습니다."))
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
     def choose_folder(self):
         selected=QFileDialog.getExistingDirectory(self,"저장 폴더 선택",self.storage_dir.text())
@@ -130,7 +134,7 @@ class SettingsDialog(QDialog):
         completed, failed = self.completed_color.text().strip(), self.failed_color.text().strip()
         if not QColor(completed).isValid() or not QColor(failed).isValid():
             QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
-        self.store.save_settings(study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),storage_dir=str(folder),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
+        self.store.save_settings(study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),camera_resolution=self.camera_resolution.currentData(),storage_dir=str(folder),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
     def choose_youtube_secret(self):
         selected, _ = QFileDialog.getOpenFileName(self, "Google OAuth client_secret JSON 선택", self.youtube_secret.text(), "JSON files (*.json)")
         if selected: self.youtube_secret.setText(selected)
@@ -275,7 +279,13 @@ class StudioWindow(QMainWindow):
         splitter=QSplitter(); outer.addWidget(splitter,1); left=QWidget(); left_layout=QVBoxLayout(left); self.preview=QLabel("카메라 미리보기"); self.preview.setAlignment(Qt.AlignCenter); self.preview.setMinimumSize(520,390); self.preview.setStyleSheet("background:#202536;color:#dce3ff;border-radius:12px;font-size:16px;"); left_layout.addWidget(self.preview)
         controls=QHBoxLayout(); self.record_button=QPushButton("촬영 시작"); self.preview_button=secondary("미리보기 숨기기"); self.pomodoro_button=secondary("뽀모도로 시작"); self.finish=secondary("영상 만들기"); controls.addWidget(self.record_button); controls.addWidget(self.preview_button); controls.addWidget(self.pomodoro_button); controls.addWidget(self.finish); left_layout.addLayout(controls); splitter.addWidget(left); self.planner=Planner(store,chosen_day,refresh_home); splitter.addWidget(self.planner); splitter.setSizes([650,450])
         self.capture_timer,self.preview_timer,self.clock,self.blink_timer=QTimer(self),QTimer(self),QTimer(self),QTimer(self); self.preview_timer.setInterval(100); self.clock.setInterval(1000); self.blink_timer.setInterval(300); self.capture_timer.timeout.connect(self.capture); self.preview_timer.timeout.connect(self.update_preview); self.clock.timeout.connect(self.tick); self.blink_timer.timeout.connect(self.blink_timer_label); self.record_button.clicked.connect(self.toggle_recording); self.preview_button.clicked.connect(self.toggle_preview); self.pomodoro_button.clicked.connect(self.toggle_pomodoro); self.finish.clicked.connect(self.finish_video); settings.clicked.connect(self.open_settings); clock_view.clicked.connect(self.open_clock_window); session_settings.clicked.connect(self.configure_session_goal); self.set_phase(False)
-    def new_camera(self): return CameraService(Path(self.store.data["settings"]["storage_dir"]))
+    def new_camera(self):
+        selected=self.store.data["settings"]["camera_resolution"]
+        try:
+            width, height=(int(value) for value in selected.split("x")) if selected != "default" else (None, None)
+        except (AttributeError, ValueError):
+            width, height=None, None
+        return CameraService(Path(self.store.data["settings"]["storage_dir"]), resolution=(width, height) if width and height else None)
     def configure_alarm(self):
         settings=self.store.data["settings"]; tone=ensure_alarm_tone(Path(settings["storage_dir"])); self.alarm.setSource(QUrl.fromLocalFile(str(tone))); self.alarm.setVolume(settings["alarm_volume"] / 100)
     def play_alarm(self):
@@ -310,7 +320,9 @@ class StudioWindow(QMainWindow):
         self.recording=not self.recording; self.record_button.setText("촬영 중지" if self.recording else "촬영 시작"); set_danger(self.record_button,self.recording)
         if self.recording and not self.in_break:
             if not self.camera.start(): self.recording=False; self.record_button.setText("촬영 시작"); set_danger(self.record_button,False); self.state_label.setText("카메라를 찾을 수 없습니다. 카메라 연결·권한을 확인하세요."); return
-            self.preview_timer.start(); self.update_preview(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"]*1000)); self.state_label.setText("공부 중: 카메라를 유지하며 설정 간격으로 저장합니다.")
+            self.preview_timer.start(); self.update_preview(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"]*1000))
+            actual=self.camera.active_resolution()
+            self.state_label.setText(f"공부 중: {actual[0]} × {actual[1]} 카메라로 설정 간격마다 저장합니다." if actual else "공부 중: 카메라를 유지하며 설정 간격으로 저장합니다.")
             if self.store.data["settings"]["pomodoro_with_camera"] and not self.clock.isActive(): self.set_phase(False); self.start_pomodoro()
         elif not self.recording: self.finalize_recording(True)
         self.update_awake_state()
@@ -354,7 +366,9 @@ class StudioWindow(QMainWindow):
         import cv2
         frame=cv2.flip(frame,1); self.current_frame=frame.copy()
         if self.preview_hidden: return
-        height,width,channels=frame.shape; image=QImage(frame.data,width,height,channels*width,QImage.Format_BGR888); self.preview.setPixmap(QPixmap.fromImage(image).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation))
+        preview_frame=frame.copy()
+        self.camera.draw_timestamp(preview_frame,datetime.now(),self.store.data["settings"]["timestamp_format"])
+        height,width,channels=preview_frame.shape; image=QImage(preview_frame.data,width,height,channels*width,QImage.Format_BGR888); self.preview.setPixmap(QPixmap.fromImage(image).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation))
     def finish_video(self): self.recording=False; self.record_button.setText("촬영 시작"); set_danger(self.record_button,False); self.finalize_recording(True); self.update_awake_state()
     def finalize_recording(self,announce=False):
         self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop(); video=self.camera.make_timelapse_with_timestamp(self.images,self.store.data["settings"]["speed"],self.store.data["settings"]["timestamp_format"])

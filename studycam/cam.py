@@ -11,16 +11,21 @@ import cv2
 class CameraService:
     """Keeps the webcam open only while a recording session is active."""
 
-    def __init__(self, directory: Path | None = None, camera_index: int = 0) -> None:
+    def __init__(self, directory: Path | None = None, camera_index: int = 0, resolution: tuple[int, int] | None = None) -> None:
         self.directory = directory or Path.home() / ".studycam" / "captures"
         self.directory.mkdir(parents=True, exist_ok=True)
         self.camera_index = camera_index
+        self.resolution = resolution
         self.cap: cv2.VideoCapture | None = None
 
     def start(self) -> bool:
         if self.cap is not None and self.cap.isOpened():
             return True
         self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        if self.resolution:
+            width, height = self.resolution
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, 10)
         if self.cap.isOpened():
             return True
@@ -33,6 +38,12 @@ class CameraService:
             return None
         ok, frame = self.cap.read()
         return frame if ok else None
+
+    def active_resolution(self) -> tuple[int, int] | None:
+        """Return the resolution the camera actually accepted, if it is open."""
+        if self.cap is None or not self.cap.isOpened():
+            return None
+        return (round(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), round(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
     def save_frame(self, frame) -> Path | None:
         if frame is None:
@@ -74,17 +85,33 @@ class CameraService:
             captured = datetime.strptime(path.stem, "%Y%m%d_%H%M%S_%f")
         except ValueError:
             captured = datetime.now()
+        CameraService.draw_timestamp(frame, captured, timestamp_format)
+
+    @staticmethod
+    def draw_timestamp(frame, captured: datetime, timestamp_format: str) -> None:
+        """Draw the same clean timestamp used in the preview and final video."""
         if timestamp_format == "HH:MM:SS":
             label = captured.strftime("%H:%M:%S")
         elif timestamp_format == "12H":
             label = f"{'AM' if captured.hour < 12 else 'PM'} {(captured.hour - 1) % 12 + 1}:{captured:%M}"
         else:
             label = captured.strftime("%H:%M")
-        height, width = frame.shape[:2]
-        scale = max(0.55, width / 1400)
-        origin = (int(width * 0.04), height - int(height * 0.05))
-        cv2.putText(frame, label, origin, cv2.FONT_HERSHEY_SIMPLEX, scale, (15, 15, 15), max(3, int(scale * 5)), cv2.LINE_AA)
-        cv2.putText(frame, label, origin, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), max(1, int(scale * 2)), cv2.LINE_AA)
+        _, width = frame.shape[:2]
+        scale = max(0.8, width / 1150)
+        thickness = max(1, round(scale * 1.5))
+        (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        padding_x = max(14, round(width * 0.02))
+        padding_y = max(12, round(width * 0.015))
+        outer_margin = max(14, round(width * 0.02))
+        left = width - text_width - padding_x * 2 - outer_margin
+        top = outer_margin
+        right = width - outer_margin
+        bottom = top + text_height + padding_y * 2
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (left, top), (right, bottom), (10, 10, 10), -1)
+        cv2.addWeighted(overlay, 0.68, frame, 0.32, 0, frame)
+        # The baseline places the visible glyphs exactly in the padded rectangle.
+        cv2.putText(frame, label, (left + padding_x, bottom - padding_y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
     def combine_videos(self, videos: list[Path], output: Path) -> Path | None:
         """Combine same-day time-lapses into one video, preserving stamped frames."""
