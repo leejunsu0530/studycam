@@ -112,6 +112,10 @@ class SettingsDialog(QDialog):
         self.completed_color=QLineEdit(s["completed_color"]); self.completed_color.setPlaceholderText("#dce8ff")
         self.failed_color=QLineEdit(s["failed_color"]); self.failed_color.setPlaceholderText("#ffd9d9")
         self.timestamp_format=QComboBox(); self.timestamp_format.addItem("24시간 (13:05)", "HH:MM"); self.timestamp_format.addItem("초 포함 (13:05:30)", "HH:MM:SS"); self.timestamp_format.addItem("12시간 (PM 1:05)", "12H"); self.timestamp_format.setCurrentIndex(max(0, self.timestamp_format.findData(s["timestamp_format"])))
+        self.timestamp_background=QLineEdit(s["timestamp_background_color"]); self.timestamp_background.setPlaceholderText("#0a0a0a")
+        self.timestamp_text=QLineEdit(s["timestamp_text_color"]); self.timestamp_text.setPlaceholderText("#ffffff")
+        self.timestamp_font=QComboBox(); self.timestamp_font.addItem("깔끔한 고딕", "simplex"); self.timestamp_font.addItem("부드러운 고딕", "duplex"); self.timestamp_font.addItem("강조 고딕", "triplex"); self.timestamp_font.setCurrentIndex(max(0, self.timestamp_font.findData(s["timestamp_font"])))
+        self.timestamp_size=QSpinBox(); self.timestamp_size.setRange(60, 220); self.timestamp_size.setSuffix("%"); self.timestamp_size.setValue(s["timestamp_size"])
         self.day_lock_hour=QSpinBox(); self.day_lock_hour.setRange(0, 23); self.day_lock_hour.setSuffix("시 (다음 날)"); self.day_lock_hour.setValue(s["day_lock_hour"])
         self.youtube_auto=QCheckBox("하루 영상 자동 YouTube 업로드"); self.youtube_auto.setChecked(s["youtube_auto_upload"])
         self.youtube_secret=QLineEdit(s["youtube_client_secret"]); self.youtube_secret.setReadOnly(True)
@@ -122,8 +126,21 @@ class SettingsDialog(QDialog):
         self.youtube_privacy=QComboBox(); self.youtube_privacy.addItem("비공개", "private"); self.youtube_privacy.addItem("미등록", "unlisted"); self.youtube_privacy.addItem("공개", "public"); self.youtube_privacy.setCurrentIndex(max(0, self.youtube_privacy.findData(s["youtube_privacy"])))
         choose, open_dir = secondary("폴더 선택"), secondary("폴더 열기"); choose.clicked.connect(self.choose_folder); open_dir.clicked.connect(self.open_folder)
         folder=QHBoxLayout(); folder.addWidget(self.storage_dir,1); folder.addWidget(choose); folder.addWidget(open_dir)
-        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("카메라 해상도",self.camera_resolution); form.addRow(QLabel("높을수록 시간 글씨와 영상은 선명하지만, 카메라가 지원하지 않으면 기본 해상도로 동작할 수 있고 PC 부담이 커집니다.")); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상 시간 표시",self.timestamp_format); form.addRow("하루 수정 잠금",self.day_lock_hour); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",self.completed_color); form.addRow("목표 미완료일 색상 (HEX)",self.failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_home_close); form.addRow("",self.prevent_studio_close); form.addRow("YouTube 자동 업로드",self.youtube_auto); form.addRow("YouTube OAuth",youtube_row); form.addRow("업로드 제목",self.youtube_title); form.addRow("업로드 공개 범위",self.youtube_privacy); form.addRow(QLabel("Google Cloud에서 YouTube Data API를 켜고 Desktop OAuth JSON을 선택하세요. 미검증 앱 업로드는 비공개일 수 있습니다."))
+        completed_color=self.color_input(self.completed_color); failed_color=self.color_input(self.failed_color); timestamp_background=self.color_input(self.timestamp_background); timestamp_text=self.color_input(self.timestamp_text)
+        form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("카메라 해상도",self.camera_resolution); form.addRow(QLabel("높을수록 시간 글씨와 영상은 선명하지만, 카메라가 지원하지 않으면 기본 해상도로 동작할 수 있고 PC 부담이 커집니다.")); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상 시간 표시",self.timestamp_format); form.addRow("시간 박스 배경색 (HEX)",timestamp_background); form.addRow("시간 글자색 (HEX)",timestamp_text); form.addRow("시간 글꼴",self.timestamp_font); form.addRow("시간 글자 크기",self.timestamp_size); form.addRow("하루 수정 잠금",self.day_lock_hour); form.addRow("영상·촬영본 저장 폴더",folder); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",completed_color); form.addRow("목표 미완료일 색상 (HEX)",failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_home_close); form.addRow("",self.prevent_studio_close); form.addRow("YouTube 자동 업로드",self.youtube_auto); form.addRow("YouTube OAuth",youtube_row); form.addRow("업로드 제목",self.youtube_title); form.addRow("업로드 공개 범위",self.youtube_privacy); form.addRow(QLabel("Google Cloud에서 YouTube Data API를 켜고 Desktop OAuth JSON을 선택하세요. 미검증 앱 업로드는 비공개일 수 있습니다."))
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
+    def color_input(self, field):
+        """Return a HEX input with an always-current visual swatch."""
+        swatch=QLabel(); swatch.setFixedSize(25,25); swatch.setToolTip("입력한 색상 미리보기")
+        def refresh(value):
+            color=QColor(value.strip())
+            fill=color.name() if color.isValid() else "#ffffff"
+            border="#cfd6e3" if color.isValid() else "#dc2626"
+            swatch.setStyleSheet(f"background:{fill};border:1px solid {border};border-radius:4px;")
+        field.textChanged.connect(refresh); refresh(field.text())
+        row=QHBoxLayout(); row.setContentsMargins(0,0,0,0); row.addWidget(field,1); row.addWidget(swatch)
+        holder=QWidget(); holder.setLayout(row)
+        return holder
     def choose_folder(self):
         selected=QFileDialog.getExistingDirectory(self,"저장 폴더 선택",self.storage_dir.text())
         if selected: self.storage_dir.setText(selected)
@@ -132,9 +149,10 @@ class SettingsDialog(QDialog):
     def save(self):
         folder=Path(self.storage_dir.text()); folder.mkdir(parents=True,exist_ok=True)
         completed, failed = self.completed_color.text().strip(), self.failed_color.text().strip()
-        if not QColor(completed).isValid() or not QColor(failed).isValid():
+        timestamp_background, timestamp_text = self.timestamp_background.text().strip(), self.timestamp_text.text().strip()
+        if not all(QColor(color).isValid() for color in (completed, failed, timestamp_background, timestamp_text)):
             QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
-        self.store.save_settings(study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),camera_resolution=self.camera_resolution.currentData(),storage_dir=str(folder),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
+        self.store.save_settings(study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),camera_resolution=self.camera_resolution.currentData(),storage_dir=str(folder),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),timestamp_background_color=timestamp_background,timestamp_text_color=timestamp_text,timestamp_font=self.timestamp_font.currentData(),timestamp_size=self.timestamp_size.value(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
     def choose_youtube_secret(self):
         selected, _ = QFileDialog.getOpenFileName(self, "Google OAuth client_secret JSON 선택", self.youtube_secret.text(), "JSON files (*.json)")
         if selected: self.youtube_secret.setText(selected)
@@ -367,11 +385,11 @@ class StudioWindow(QMainWindow):
         frame=cv2.flip(frame,1); self.current_frame=frame.copy()
         if self.preview_hidden: return
         preview_frame=frame.copy()
-        self.camera.draw_timestamp(preview_frame,datetime.now(),self.store.data["settings"]["timestamp_format"])
+        self.camera.draw_timestamp(preview_frame,datetime.now(),self.store.data["settings"]["timestamp_format"],self.store.data["settings"])
         height,width,channels=preview_frame.shape; image=QImage(preview_frame.data,width,height,channels*width,QImage.Format_BGR888); self.preview.setPixmap(QPixmap.fromImage(image).scaled(self.preview.size(),Qt.KeepAspectRatio,Qt.SmoothTransformation))
     def finish_video(self): self.recording=False; self.record_button.setText("촬영 시작"); set_danger(self.record_button,False); self.finalize_recording(True); self.update_awake_state()
     def finalize_recording(self,announce=False):
-        self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop(); video=self.camera.make_timelapse_with_timestamp(self.images,self.store.data["settings"]["speed"],self.store.data["settings"]["timestamp_format"])
+        self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop(); video=self.camera.make_timelapse_with_timestamp(self.images,self.store.data["settings"]["speed"],self.store.data["settings"]["timestamp_format"],self.store.data["settings"])
         if not video:
             if announce: QMessageBox.information(self,"영상 만들기","저장된 사진이 없어 영상을 만들 수 없습니다.")
             return

@@ -59,7 +59,7 @@ class CameraService:
     def make_timelapse(self, images: list[Path], speed: int = 20) -> Path | None:
         return self.make_timelapse_with_timestamp(images, speed)
 
-    def make_timelapse_with_timestamp(self, images: list[Path], speed: int = 20, timestamp_format: str = "HH:MM") -> Path | None:
+    def make_timelapse_with_timestamp(self, images: list[Path], speed: int = 20, timestamp_format: str = "HH:MM", timestamp_style: dict | None = None) -> Path | None:
         valid = [path for path in images if path.exists()]
         if not valid:
             return None
@@ -73,22 +73,22 @@ class CameraService:
             for path in valid:
                 frame = cv2.imread(str(path))
                 if frame is not None:
-                    self._draw_timestamp(frame, path, timestamp_format)
+                    self._draw_timestamp(frame, path, timestamp_format, timestamp_style)
                     writer.write(cv2.resize(frame, (width, height)))
         finally:
             writer.release()
         return output
 
     @staticmethod
-    def _draw_timestamp(frame, path: Path, timestamp_format: str) -> None:
+    def _draw_timestamp(frame, path: Path, timestamp_format: str, timestamp_style: dict | None = None) -> None:
         try:
             captured = datetime.strptime(path.stem, "%Y%m%d_%H%M%S_%f")
         except ValueError:
             captured = datetime.now()
-        CameraService.draw_timestamp(frame, captured, timestamp_format)
+        CameraService.draw_timestamp(frame, captured, timestamp_format, timestamp_style)
 
     @staticmethod
-    def draw_timestamp(frame, captured: datetime, timestamp_format: str) -> None:
+    def draw_timestamp(frame, captured: datetime, timestamp_format: str, timestamp_style: dict | None = None) -> None:
         """Draw the same clean timestamp used in the preview and final video."""
         if timestamp_format == "HH:MM:SS":
             label = captured.strftime("%H:%M:%S")
@@ -96,10 +96,15 @@ class CameraService:
             label = f"{'AM' if captured.hour < 12 else 'PM'} {(captured.hour - 1) % 12 + 1}:{captured:%M}"
         else:
             label = captured.strftime("%H:%M")
+        style = timestamp_style or {}
         _, width = frame.shape[:2]
-        scale = max(0.8, width / 1150)
+        scale = max(0.8, width / 1150) * (int(style.get("timestamp_size", 100)) / 100)
         thickness = max(1, round(scale * 1.5))
-        (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        fonts = {"simplex": cv2.FONT_HERSHEY_SIMPLEX, "duplex": cv2.FONT_HERSHEY_DUPLEX, "triplex": cv2.FONT_HERSHEY_TRIPLEX}
+        font = fonts.get(style.get("timestamp_font"), cv2.FONT_HERSHEY_SIMPLEX)
+        background = CameraService._hex_to_bgr(style.get("timestamp_background_color"), (10, 10, 10))
+        text_color = CameraService._hex_to_bgr(style.get("timestamp_text_color"), (255, 255, 255))
+        (text_width, text_height), _ = cv2.getTextSize(label, font, scale, thickness)
         padding_x = max(14, round(width * 0.02))
         padding_y = max(12, round(width * 0.015))
         outer_margin = max(14, round(width * 0.02))
@@ -108,10 +113,20 @@ class CameraService:
         right = width - outer_margin
         bottom = top + text_height + padding_y * 2
         overlay = frame.copy()
-        cv2.rectangle(overlay, (left, top), (right, bottom), (10, 10, 10), -1)
+        cv2.rectangle(overlay, (left, top), (right, bottom), background, -1)
         cv2.addWeighted(overlay, 0.68, frame, 0.32, 0, frame)
         # The baseline places the visible glyphs exactly in the padded rectangle.
-        cv2.putText(frame, label, (left + padding_x, bottom - padding_y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        cv2.putText(frame, label, (left + padding_x, bottom - padding_y), font, scale, text_color, thickness, cv2.LINE_AA)
+
+    @staticmethod
+    def _hex_to_bgr(value: object, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+        try:
+            code = str(value).strip().lstrip("#")
+            if len(code) != 6:
+                return fallback
+            return tuple(int(code[index:index + 2], 16) for index in (4, 2, 0))
+        except ValueError:
+            return fallback
 
     def combine_videos(self, videos: list[Path], output: Path) -> Path | None:
         """Combine same-day time-lapses into one video, preserving stamped frames."""

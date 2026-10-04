@@ -10,7 +10,7 @@ from typing import Any
 
 DEFAULT_DATA: dict[str, Any] = {
     "tasks": {}, "subjects": [], "schedule": [], "started_on": date.today().isoformat(), "study_seconds": {},
-    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "camera_resolution": "1280x720", "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False, "timestamp_format": "HH:MM", "day_lock_hour": 12, "youtube_auto_upload": False, "youtube_client_secret": "", "youtube_title_template": "StudyCam {date}", "youtube_privacy": "private"},
+    "settings": {"study_minutes": 50, "break_minutes": 10, "capture_seconds": 30, "speed": 20, "camera_resolution": "1280x720", "storage_dir": str(Path.home() / ".studycam" / "media"), "alarm_enabled": True, "alarm_volume": 70, "completed_color": "#dce8ff", "failed_color": "#ffd9d9", "start_maximized": False, "pomodoro_with_camera": False, "prevent_home_close": False, "prevent_studio_close": False, "timestamp_format": "HH:MM", "timestamp_background_color": "#0a0a0a", "timestamp_text_color": "#ffffff", "timestamp_font": "simplex", "timestamp_size": 100, "day_lock_hour": 12, "youtube_auto_upload": False, "youtube_client_secret": "", "youtube_title_template": "StudyCam {date}", "youtube_privacy": "private"},
     "videos": {}, "daily_videos": {}, "youtube_uploads": {},
 }
 
