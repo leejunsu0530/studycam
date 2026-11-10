@@ -42,3 +42,6 @@ studycam = "studycam.gui:main"
 
 [tool.setuptools.packages.find]
 include = ["studycam*"]
+
+[tool.setuptools.package-data]
+studycam = ["browser_extension/*.json", "browser_extension/*.js"]

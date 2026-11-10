@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "StudyCam Focus",
+  "version": "1.0.0",
+  "description": "Apply StudyCam website rules during focus periods.",
+  "permissions": ["tabs", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{"matches": ["http://*/*", "https://*/*"], "js": ["heartbeat.js"]}]
+}

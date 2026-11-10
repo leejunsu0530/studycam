@@ -15,6 +15,9 @@ DEFAULT_DATA: dict[str, Any] = {
 }
 
 
+DEFAULT_DATA["settings"].update({"confirm_close": True, "startup_window": "calendar"})
+
+
 class StudyStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or Path.home() / ".studycam" / "studycam.json"

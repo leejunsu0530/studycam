@@ -16,11 +16,14 @@ from PySide6.QtGui import QColor, QDesktopServices, QIcon, QImage, QPixmap, QTex
 from PySide6.QtMultimedia import QSoundEffect
 from PySide6.QtWidgets import (QApplication, QCalendarWidget, QComboBox, QDialog,
     QAbstractSpinBox, QCheckBox, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .cam import CameraService
 from .schedule import StudyStore
+from .timer import advance_timer
+from .video_jobs import DailyVideoJobs
+from .restrictions import FocusRestrictions, PROTECTED
 
 APP_STYLE = """
 QWidget { font-family: 'Malgun Gothic'; font-size: 13px; color: #213547; }
@@ -53,9 +56,13 @@ def set_danger(button: QPushButton, active: bool) -> None:
 
 def can_close_window(parent: QWidget, store: StudyStore, setting: str) -> bool:
     """Respect the close-lock setting and ask before closing an app window."""
+    if QApplication.instance().property("system_shutdown"):
+        return True
     if store.data["settings"][setting]:
         QMessageBox.information(parent, "창 닫기 방지", "설정에서 창 닫기 방지가 켜져 있어 창을 닫을 수 없습니다.")
         return False
+    if not store.data["settings"].get("confirm_close", True):
+        return True
     return QMessageBox.question(
         parent, "창 닫기", "정말 창을 닫으시겠습니까?",
         QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
@@ -110,6 +117,8 @@ class SettingsDialog(QDialog):
         self.alarm_enabled=QCheckBox("집중·휴식 전환 시 알람음 재생"); self.alarm_enabled.setChecked(s["alarm_enabled"])
         self.alarm_volume=QSpinBox(); self.alarm_volume.setRange(0,100); self.alarm_volume.setSuffix("%"); self.alarm_volume.setValue(s["alarm_volume"])
         self.start_maximized=QCheckBox("다음 앱 실행 시 창 최대화"); self.start_maximized.setChecked(s["start_maximized"])
+        self.confirm_close=QCheckBox("창을 닫을 때 확인"); self.confirm_close.setChecked(s["confirm_close"])
+        self.startup_window=QComboBox(); self.startup_window.addItem("캘린더", "calendar"); self.startup_window.addItem("카메라", "camera"); self.startup_window.setCurrentIndex(max(0,self.startup_window.findData(s["startup_window"])))
         self.pomodoro_with_camera=QCheckBox("촬영 시작 시 뽀모도로도 자동 시작"); self.pomodoro_with_camera.setChecked(s["pomodoro_with_camera"])
         self.prevent_home_close=QCheckBox("캘린더 창 닫기 방지"); self.prevent_home_close.setChecked(s["prevent_home_close"])
         self.prevent_studio_close=QCheckBox("카메라 창 닫기 방지"); self.prevent_studio_close.setChecked(s["prevent_studio_close"])
@@ -135,6 +144,7 @@ class SettingsDialog(QDialog):
         cleanup=secondary("지금 정리"); cleanup.clicked.connect(self.cleanup_captures)
         completed_color=self.color_input(self.completed_color); failed_color=self.color_input(self.failed_color); timestamp_background=self.color_input(self.timestamp_background); timestamp_text=self.color_input(self.timestamp_text)
         form.addRow("집중 시간 (분)",self.study); form.addRow("휴식 시간 (분)",self.rest); form.addRow("사진 촬영 간격 (초)",self.capture); form.addRow("카메라 해상도",self.camera_resolution); form.addRow(QLabel("높을수록 시간 글씨와 영상은 선명하지만, 카메라가 지원하지 않으면 기본 해상도로 동작할 수 있고 PC 부담이 커집니다.")); form.addRow("타임랩스 FPS / 배속",self.speed); form.addRow("영상 시간 표시",self.timestamp_format); form.addRow("시간 박스 배경색 (HEX)",timestamp_background); form.addRow("시간 글자색 (HEX)",timestamp_text); form.addRow("시간 글꼴",self.timestamp_font); form.addRow("시간 글자 크기",self.timestamp_size); form.addRow("하루 수정 잠금",self.day_lock_hour); form.addRow("완성 영상 저장 폴더",folder); form.addRow("원본 PNG 저장 폴더",capture_folder); form.addRow("원본 PNG 정리",self.auto_cleanup_captures); form.addRow("",cleanup); form.addRow("알람",self.alarm_enabled); form.addRow("알람 음량",self.alarm_volume); form.addRow("목표 완료일 색상 (HEX)",completed_color); form.addRow("목표 미완료일 색상 (HEX)",failed_color); form.addRow("창 시작 옵션",self.start_maximized); form.addRow("촬영·타이머 연동",self.pomodoro_with_camera); form.addRow("창 닫기",self.prevent_home_close); form.addRow("",self.prevent_studio_close); form.addRow("YouTube 자동 업로드",self.youtube_auto); form.addRow("YouTube OAuth",youtube_row); form.addRow("업로드 제목",self.youtube_title); form.addRow("업로드 공개 범위",self.youtube_privacy); form.addRow(QLabel("Google Cloud에서 YouTube Data API를 켜고 Desktop OAuth JSON을 선택하세요. 미검증 앱 업로드는 비공개일 수 있습니다."))
+        form.addRow("종료 확인",self.confirm_close); form.addRow("시작 화면",self.startup_window)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); form.addRow(buttons)
     def color_input(self, field):
         """Return a HEX input with an always-current visual swatch."""
@@ -168,7 +178,7 @@ class SettingsDialog(QDialog):
         timestamp_background, timestamp_text = self.timestamp_background.text().strip(), self.timestamp_text.text().strip()
         if not all(QColor(color).isValid() for color in (completed, failed, timestamp_background, timestamp_text)):
             QMessageBox.warning(self,"색상 코드 확인","색상은 #RRGGBB 형식의 올바른 HEX 코드여야 합니다."); return
-        self.store.save_settings(study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),camera_resolution=self.camera_resolution.currentData(),storage_dir=str(folder),capture_dir=str(capture_folder),auto_cleanup_captures=self.auto_cleanup_captures.isChecked(),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),timestamp_background_color=timestamp_background,timestamp_text_color=timestamp_text,timestamp_font=self.timestamp_font.currentData(),timestamp_size=self.timestamp_size.value(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
+        self.store.save_settings(confirm_close=self.confirm_close.isChecked(),startup_window=self.startup_window.currentData(),study_minutes=self.study.value(),break_minutes=self.rest.value(),capture_seconds=self.capture.value(),speed=self.speed.value(),camera_resolution=self.camera_resolution.currentData(),storage_dir=str(folder),capture_dir=str(capture_folder),auto_cleanup_captures=self.auto_cleanup_captures.isChecked(),alarm_enabled=self.alarm_enabled.isChecked(),alarm_volume=self.alarm_volume.value(),completed_color=completed,failed_color=failed,start_maximized=self.start_maximized.isChecked(),pomodoro_with_camera=self.pomodoro_with_camera.isChecked(),prevent_home_close=self.prevent_home_close.isChecked(),prevent_studio_close=self.prevent_studio_close.isChecked(),timestamp_format=self.timestamp_format.currentData(),timestamp_background_color=timestamp_background,timestamp_text_color=timestamp_text,timestamp_font=self.timestamp_font.currentData(),timestamp_size=self.timestamp_size.value(),day_lock_hour=self.day_lock_hour.value(),youtube_auto_upload=self.youtube_auto.isChecked(),youtube_client_secret=self.youtube_secret.text(),youtube_title_template=self.youtube_title.text().strip() or "StudyCam {date}",youtube_privacy=self.youtube_privacy.currentData()); self.accept()
     def choose_youtube_secret(self):
         selected, _ = QFileDialog.getOpenFileName(self, "Google OAuth client_secret JSON 선택", self.youtube_secret.text(), "JSON files (*.json)")
         if selected: self.youtube_secret.setText(selected)
@@ -180,6 +190,61 @@ class SettingsDialog(QDialog):
             QMessageBox.information(self, "YouTube 로그인", "Google 로그인과 업로드 권한 승인이 완료되었습니다.")
         except Exception as error:
             QMessageBox.warning(self, "YouTube 로그인 실패", str(error))
+
+
+class RestrictionDialog(QDialog):
+    """Edit independent lists of sites and explicitly selected applications."""
+    def __init__(self, store, parent=None):
+        super().__init__(parent); self.store=store; self.setWindowTitle("공부 중 제한"); self.resize(860,600)
+        outer=QVBoxLayout(self)
+        info=QLabel("집중 시간이 진행 중일 때만 적용합니다. 앱은 지정한 EXE의 창에 닫기 요청을 보냅니다. 사이트 제한은 StudyCam 브라우저 확장 설치가 필요합니다.")
+        info.setWordWrap(True); outer.addWidget(info)
+        self.table=QTableWidget(0,3); self.table.setHorizontalHeaderLabels(["대상","동작","목록 (한 줄에 하나)"]); self.table.horizontalHeader().setStretchLastSection(True); self.table.setColumnWidth(0,130); self.table.setColumnWidth(1,160); outer.addWidget(self.table)
+        controls=QHBoxLayout(); add=secondary("목록 추가"); remove=secondary("선택 목록 삭제"); choose=secondary("EXE 추가"); extension=secondary("확장 폴더 열기")
+        for button in (add,remove,choose,extension): controls.addWidget(button)
+        controls.addStretch(); outer.addLayout(controls)
+        add.clicked.connect(lambda: self.add_row()); remove.clicked.connect(self.remove_row); choose.clicked.connect(self.choose_app); extension.clicked.connect(self.open_extension)
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.save); buttons.rejected.connect(self.reject); outer.addWidget(buttons)
+        for rule in store.data.get("restriction_rules", []): self.add_row(rule)
+
+    def add_row(self, rule=None):
+        rule=rule or {}; row=self.table.rowCount(); self.table.insertRow(row); self.table.setRowHeight(row,100)
+        kind=QComboBox(); kind.addItem("웹사이트","site"); kind.addItem("프로그램","app"); kind.setCurrentIndex(max(0,kind.findData(rule.get("kind","site"))))
+        mode=QComboBox(); mode.addItem("목록 차단","block"); mode.addItem("목록만 허용","allow"); mode.setCurrentIndex(max(0,mode.findData(rule.get("mode","block"))))
+        patterns=QPlainTextEdit(); patterns.setPlainText("\n".join(rule.get("patterns",[]))); patterns.setPlaceholderText("example.com 또는 *.example.com\n프로그램은 EXE 전체 경로")
+        self.table.setCellWidget(row,0,kind); self.table.setCellWidget(row,1,mode); self.table.setCellWidget(row,2,patterns)
+        kind.currentIndexChanged.connect(lambda: self.update_mode(kind,mode)); self.update_mode(kind,mode)
+
+    def update_mode(self,kind,mode):
+        if kind.currentData()=="app": mode.setCurrentIndex(0)
+        mode.setEnabled(kind.currentData()=="site")
+
+    def remove_row(self):
+        row=self.table.currentRow()
+        if row>=0: self.table.removeRow(row)
+
+    def choose_app(self):
+        row=self.table.currentRow()
+        if row<0 or self.table.cellWidget(row,0).currentData()!="app":
+            QMessageBox.information(self,"프로그램 선택","프로그램 목록 행을 먼저 선택하세요."); return
+        path,_=QFileDialog.getOpenFileName(self,"제한할 프로그램 선택","","실행 파일 (*.exe)")
+        if path: self.table.cellWidget(row,2).appendPlainText(str(Path(path)))
+
+    def open_extension(self):
+        folder=Path(__file__).resolve().parent/"browser_extension"
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def save(self):
+        rules=[]
+        for row in range(self.table.rowCount()):
+            kind=self.table.cellWidget(row,0).currentData(); mode=self.table.cellWidget(row,1).currentData()
+            patterns=[line.strip() for line in self.table.cellWidget(row,2).toPlainText().splitlines() if line.strip()]
+            if not patterns:
+                QMessageBox.warning(self,"목록 확인",f"{row+1}번째 목록에 항목을 입력하세요."); return
+            if kind=="app" and any(not Path(path).is_absolute() or Path(path).suffix.lower()!=".exe" or Path(path).name.lower() in PROTECTED for path in patterns):
+                QMessageBox.warning(self,"프로그램 확인","시스템 필수 프로그램을 제외하고 EXE의 전체 경로를 지정하세요."); return
+            rules.append({"kind":kind,"mode":mode,"patterns":patterns})
+        self.store.data["restriction_rules"]=rules; self.store.save(); self.accept()
 
 
 class ScheduleDialog(QDialog):
@@ -306,11 +371,14 @@ class ClockWindow(QMainWindow):
 
 
 class StudioWindow(QMainWindow):
-    def __init__(self,store:StudyStore,chosen_day:date,refresh_home):
+    def __init__(self,store:StudyStore,chosen_day:date,refresh_home,video_jobs,restrictions,show_calendar):
         super().__init__(); self.store,self.refresh_home,self.day=store,refresh_home,chosen_day; self.camera=self.new_camera(); self.images=[]; self.recording=False; self.in_break=False; self.remaining=0; self.current_frame=None; self.preview_hidden=False; self.last_tick_at=None; self.tick_fraction=0.0; self.phase_started_at=None; self.phase_duration=0; self.blink_count=0; self.clock_window=None; self.session_target_seconds=0; self.session_elapsed_seconds=0; self.study_goal_mode="session"; self.lock_until_session_target=False; self.timer_color="#3446b8"; self.alarm=QSoundEffect(self); self.configure_alarm()
+        self.video_jobs=video_jobs; self.restrictions=restrictions
         if self.store.data["settings"]["auto_cleanup_captures"]: self.camera.cleanup_old_captures()
         self.setWindowTitle("StudyCam — 스터디 캠"); self.setWindowIcon(app_icon()); self.resize(1180,760); root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
         top=QHBoxLayout(); self.timer_label=QLabel(); self.timer_label.setStyleSheet("font-size:55px;font-weight:800;color:#3446b8;"); self.session_prefix=QLabel(); self.session_prefix.setStyleSheet("font-size:18px;font-weight:700;color:#5068e8;"); self.session_label=QLabel(); self.session_label.setStyleSheet("font-size:18px;font-weight:800;color:#3446b8;border:2px solid #5068e8;border-radius:6px;padding:4px 7px;"); self.state_label=QLabel("촬영을 시작하면 카메라가 켜집니다."); settings=secondary("설정"); clock_view=secondary("큰 시계"); session_settings=secondary("공부 목표 설정"); top.addWidget(self.timer_label); top.addWidget(self.session_prefix); top.addWidget(self.session_label); top.addWidget(self.state_label); top.addStretch(); top.addWidget(session_settings); top.addWidget(clock_view); top.addWidget(settings); outer.addLayout(top)
+        restrictions_button=secondary("공부 중 제한"); restrictions_button.clicked.connect(self.open_restrictions); top.addWidget(restrictions_button)
+        calendar_button=secondary("캘린더"); calendar_button.clicked.connect(show_calendar); top.addWidget(calendar_button)
         splitter=QSplitter(); outer.addWidget(splitter,1); left=QWidget(); left_layout=QVBoxLayout(left); self.preview=QLabel("카메라 미리보기"); self.preview.setAlignment(Qt.AlignCenter); self.preview.setMinimumSize(520,390); self.preview.setStyleSheet("background:#202536;color:#dce3ff;border-radius:12px;font-size:16px;"); left_layout.addWidget(self.preview)
         controls=QHBoxLayout(); self.record_button=QPushButton("촬영 시작"); self.preview_button=secondary("미리보기 숨기기"); self.pomodoro_button=secondary("뽀모도로 시작"); self.finish=secondary("영상 만들기"); controls.addWidget(self.record_button); controls.addWidget(self.preview_button); controls.addWidget(self.pomodoro_button); controls.addWidget(self.finish); left_layout.addLayout(controls); splitter.addWidget(left); self.planner=Planner(store,chosen_day,refresh_home); splitter.addWidget(self.planner); splitter.setSizes([650,450])
         self.capture_timer,self.preview_timer,self.clock,self.blink_timer=QTimer(self),QTimer(self),QTimer(self),QTimer(self); self.preview_timer.setInterval(100); self.clock.setInterval(1000); self.blink_timer.setInterval(300); self.capture_timer.timeout.connect(self.capture); self.preview_timer.timeout.connect(self.update_preview); self.clock.timeout.connect(self.tick); self.blink_timer.timeout.connect(self.blink_timer_label); self.record_button.clicked.connect(self.toggle_recording); self.preview_button.clicked.connect(self.toggle_preview); self.pomodoro_button.clicked.connect(self.toggle_pomodoro); self.finish.clicked.connect(self.finish_video); settings.clicked.connect(self.open_settings); clock_view.clicked.connect(self.open_clock_window); session_settings.clicked.connect(self.configure_session_goal); self.set_phase(False)
@@ -326,14 +394,24 @@ class StudioWindow(QMainWindow):
     def play_alarm(self):
         if self.store.data["settings"]["alarm_enabled"]: self.alarm.play()
     def open_settings(self):
+        old_durations=(self.store.data["settings"]["study_minutes"],self.store.data["settings"]["break_minutes"])
         if SettingsDialog(self.store,self).exec():
             if not self.recording: self.camera.stop(); self.camera=self.new_camera()
             self.configure_alarm()
-            self.set_phase(self.in_break)
+            new_durations=(self.store.data["settings"]["study_minutes"],self.store.data["settings"]["break_minutes"])
+            if old_durations != new_durations:
+                self.set_phase(self.in_break)
+                if self.clock.isActive(): self.last_tick_at=time.monotonic(); self.tick_fraction=0.0
             self.planner.reload(); self.refresh_home()
     def open_clock_window(self):
         if self.clock_window and self.clock_window.isVisible(): self.clock_window.raise_(); self.clock_window.activateWindow(); return
         self.clock_window=ClockWindow(self); self.clock_window.show()
+    def open_restrictions(self):
+        if RestrictionDialog(self.store,self).exec() and self.clock.isActive() and not self.in_break:
+            self.activate_restrictions()
+    def activate_restrictions(self):
+        try: self.restrictions.start()
+        except OSError as error: QMessageBox.warning(self,"사이트 제한 실행 실패",str(error))
     def configure_session_goal(self):
         dialog=QDialog(self); dialog.setWindowTitle("공부 목표 시간"); form=QFormLayout(dialog); mode=QComboBox(); mode.addItem("이번 공부 시간", "session"); mode.addItem("오늘 총 공부시간", "daily"); mode.setCurrentIndex(max(0,mode.findData(self.study_goal_mode))); hours=QSpinBox(); hours.setRange(0,24); hours.setSingleStep(1); hours.setButtonSymbols(QAbstractSpinBox.UpDownArrows); hours.setSuffix("시간"); minutes=QSpinBox(); minutes.setRange(0,59); minutes.setSingleStep(1); minutes.setButtonSymbols(QAbstractSpinBox.UpDownArrows); minutes.setSuffix("분"); total_minutes=self.session_target_seconds//60; hours.setValue(total_minutes//60); minutes.setValue(total_minutes%60); lock=QCheckBox("목표 시간을 채우기 전에는 카메라 창 닫기 방지"); lock.setChecked(self.lock_until_session_target); form.addRow("목표 기준",mode); form.addRow("목표 시간",hours); form.addRow("",minutes); form.addRow("창 닫기",lock); active_goal=self.session_target_seconds and self.session_elapsed_seconds < self.session_target_seconds
         if active_goal:
@@ -362,26 +440,37 @@ class StudioWindow(QMainWindow):
         elif not self.recording: self.finalize_recording(True)
         self.update_awake_state()
     def toggle_pomodoro(self):
-        if self.clock.isActive(): self.clock.stop(); self.last_tick_at=None; self.pomodoro_button.setText("뽀모도로 시작"); set_danger(self.pomodoro_button,False)
+        if self.clock.isActive(): self.clock.stop(); self.restrictions.stop(); self.last_tick_at=None; self.pomodoro_button.setText("뽀모도로 시작"); set_danger(self.pomodoro_button,False)
         else: self.set_phase(False); self.start_pomodoro()
         self.update_awake_state()
     def start_pomodoro(self):
         now=time.monotonic(); self.last_tick_at=now; self.tick_fraction=0.0; self.phase_started_at=now-(self.phase_duration-self.remaining); self.clock.start(); self.pomodoro_button.setText("뽀모도로 중지"); set_danger(self.pomodoro_button,True); self.update_awake_state()
+        if not self.in_break: self.activate_restrictions()
     def update_awake_state(self): keep_awake(self.recording or self.clock.isActive())
-    def set_phase(self,break_time,announce=False):
-        self.in_break=break_time; self.phase_duration=self.store.data["settings"]["break_minutes" if break_time else "study_minutes"]*60; self.remaining=self.phase_duration; self.phase_started_at=time.monotonic(); self.update_clock()
+    def set_phase(self,break_time,announce=False,started_at=None):
+        self.in_break=break_time; self.phase_duration=self.store.data["settings"]["break_minutes" if break_time else "study_minutes"]*60; self.phase_started_at=time.monotonic() if started_at is None else started_at; self.remaining=max(0, math.ceil(self.phase_duration-(time.monotonic()-self.phase_started_at))); self.update_clock()
         if break_time: self.capture_timer.stop(); self.preview_timer.stop(); self.camera.stop()
         elif self.recording and self.camera.start(): self.preview_timer.start(); self.capture_timer.start(int(self.store.data["settings"]["capture_seconds"]*1000))
+        if self.clock.isActive():
+            if break_time: self.restrictions.stop()
+            else: self.activate_restrictions()
         if announce: self.play_alarm(); self.start_blink()
     def tick(self):
-        now=time.monotonic(); passed=now-(self.last_tick_at or now)+self.tick_fraction; elapsed=max(0, int(passed)); self.tick_fraction=passed-elapsed; self.last_tick_at=now
-        self.remaining=max(0, self.phase_duration-int(now-(self.phase_started_at or now)))
-        if not self.in_break:
+        now=time.monotonic()
+        previous=self.last_tick_at if self.last_tick_at is not None else now
+        started=self.phase_started_at if self.phase_started_at is not None else now
+        settings=self.store.data["settings"]
+        progress=advance_timer(started,self.in_break,previous,now,settings["study_minutes"]*60,settings["break_minutes"]*60)
+        passed=progress.focus_seconds+self.tick_fraction
+        elapsed=max(0,int(passed)); self.tick_fraction=passed-elapsed; self.last_tick_at=now
+        if elapsed:
             self.store.add_study_seconds(date.today(), elapsed)
             if self.session_target_seconds:
                 self.session_elapsed_seconds=min(self.session_target_seconds,self.session_elapsed_seconds+elapsed); self.sync_session_goal(); self.planner.reload()
             self.refresh_home()
-        if self.remaining<=0: self.set_phase(not self.in_break,announce=True)
+        if progress.transitions:
+            self.set_phase(progress.in_break,announce=True,started_at=progress.phase_start)
+        self.remaining=max(0,math.ceil(self.phase_duration-(now-self.phase_started_at)))
         self.update_clock()
     def update_clock(self):
         self.timer_label.setText(f"{'휴식' if self.in_break else '집중'} {self.remaining//60:02}:{self.remaining%60:02}")
@@ -411,24 +500,26 @@ class StudioWindow(QMainWindow):
             if announce: QMessageBox.information(self,"영상 만들기","저장된 사진이 없어 영상을 만들 수 없습니다.")
             return
         key=self.store.key(self.day); self.store.data["videos"].setdefault(key,[]).append(str(video)); self.store.save(); self.images.clear(); self.current_frame=None
-        daily=self.rebuild_daily_video()
-        if announce: QMessageBox.information(self,"영상 완성",f"타임랩스가 저장되었습니다.\n{video}\n\n하루 영상: {daily or '생성 실패'}")
+        self.video_jobs.enqueue(key)
+        if announce: QMessageBox.information(self,"영상 완성",f"타임랩스가 저장되었습니다.\n{video}\n\n하루 영상은 백그라운드에서 생성됩니다.")
     def rebuild_daily_video(self):
         key=self.store.key(self.day); output=Path(self.store.data["settings"]["storage_dir"])/f"daily_{key.replace('-', '')}.mp4"
         daily=self.camera.combine_videos([Path(path) for path in self.store.data["videos"].get(key,[])],output)
         if daily: self.store.data["daily_videos"][key]=str(daily); self.store.save()
         return daily
     def closeEvent(self,event):
-        if self.lock_until_session_target and self.session_target_seconds and self.session_elapsed_seconds < self.session_target_seconds:
+        if not QApplication.instance().property("system_shutdown") and self.lock_until_session_target and self.session_target_seconds and self.session_elapsed_seconds < self.session_target_seconds:
             QMessageBox.information(self,"이번 공부 목표 진행 중", "설정한 이번 공부 총 목표 시간을 채운 뒤 카메라 창을 닫을 수 있습니다."); event.ignore(); return
         if not can_close_window(self, self.store, "prevent_studio_close"): event.ignore(); return
-        self.recording=False; self.clock.stop(); self.last_tick_at=None; set_danger(self.record_button,False); set_danger(self.pomodoro_button,False); self.update_awake_state(); self.finalize_recording(); self.refresh_home(); event.accept()
+        self.recording=False; self.clock.stop(); self.restrictions.stop(); self.last_tick_at=None; set_danger(self.record_button,False); set_danger(self.pomodoro_button,False); self.update_awake_state(); self.finalize_recording(); self.refresh_home(); event.accept()
 
 
 class HomePage(QWidget):
     def __init__(self,store:StudyStore):
-        super().__init__(); self.store=store; self.selected_day=date.today(); self.studio=None; self.clock_window=None; layout=QVBoxLayout(self); layout.setContentsMargins(42,30,42,34)
+        super().__init__(); self.store=store; self.selected_day=date.today(); self.studio=None; self.clock_window=None; self.uploading=set(); self.restrictions=FocusRestrictions(store); self.video_jobs=DailyVideoJobs(store); self.video_jobs.updated.connect(self.refresh); self.video_jobs.updated.connect(self.upload_ready_daily_videos); QTimer.singleShot(0,self.video_jobs.resume); layout=QVBoxLayout(self); layout.setContentsMargins(42,30,42,34)
         header=QHBoxLayout(); title=QLabel("StudyCam"); title.setStyleSheet("font-size:30px;font-weight:800;color:#3446b8;"); self.streak_label=QLabel(); self.streak_label.setStyleSheet("font-size:21px;font-weight:800;color:#2563eb;"); self.streak_time_label=QLabel(); self.streak_time_label.setStyleSheet("font-size:18px;font-weight:800;color:white;background:#2563eb;padding:6px 10px;border-radius:7px;"); streak_row=QHBoxLayout(); streak_row.setSpacing(10); streak_row.addWidget(self.streak_label); streak_row.addWidget(self.streak_time_label); start=QPushButton("스터디 캠 실행하기"); settings=secondary("설정"); today=secondary("오늘"); clock=secondary("큰 시계"); header.addWidget(title); header.addSpacing(20); header.addLayout(streak_row); header.addStretch(); header.addWidget(today); header.addWidget(clock); header.addWidget(settings); header.addWidget(start); layout.addLayout(header); layout.addWidget(QLabel("날짜를 선택하면 그날의 목표와 만들어진 공부 영상을 확인할 수 있습니다."))
+        self.video_jobs.failed_notice.connect(self.video_merge_failed)
+        restrictions_button=secondary("공부 중 제한"); restrictions_button.clicked.connect(self.open_restrictions); header.addWidget(restrictions_button)
         weekly=QFrame(); weekly.setProperty("card",True); weekly_layout=QVBoxLayout(weekly); weekly_layout.addWidget(QLabel("이번 주 요일별 공부 시간")); week_row=QHBoxLayout(); self.week_labels=[]
         for weekday in ("월","화","수","목","금","토","일"):
             label=QLabel(weekday); label.setAlignment(Qt.AlignCenter); label.setMinimumHeight(48); label.setStyleSheet("background:#edf1ff;border-radius:7px;font-weight:700;"); self.week_labels.append(label); week_row.addWidget(label)
@@ -452,17 +543,23 @@ class HomePage(QWidget):
             if self.store.is_day_locked(cursor) and not self.store.completed(cursor): self.calendar.setDateTextFormat(qdate(cursor),failed)
             cursor += timedelta(days=1)
         self.select_day()
+    def video_merge_failed(self,key,error):
+        QMessageBox.warning(self,"하루 영상 생성 실패",f"{key} 영상 병합에 실패했습니다. 다음 실행 시 다시 시도합니다.\n\n{error}")
     def select_day(self):
         self.selected_day=pydate(self.calendar.selectedDate()); tasks=self.store.tasks_for(self.selected_day); videos=self.store.data["videos"].get(self.store.key(self.selected_day),[]); has_video=bool(videos); self.videos_button.setEnabled(has_video); self.videos_button.setProperty("secondary",not has_video); self.videos_button.style().unpolish(self.videos_button); self.videos_button.style().polish(self.videos_button); self.detail.setText(f"{self.selected_day:%m월 %d일}: 목표 {len(tasks)}개 · 완료 {sum(t.get('done',False) for t in tasks)}개 · 영상 {len(videos)}개")
     def open_schedule(self):
         if ScheduleDialog(self.store,self).exec(): self.refresh()
     def open_settings(self):
         if SettingsDialog(self.store,self).exec(): self.refresh()
+    def open_restrictions(self):
+        if RestrictionDialog(self.store,self).exec() and self.restrictions.active:
+            try: self.restrictions.start()
+            except OSError as error: QMessageBox.warning(self,"사이트 제한 실행 실패",str(error))
     def go_today(self):
         today=QDate.currentDate(); self.calendar.setCurrentPage(today.year(),today.month()); self.calendar.setSelectedDate(today)
     def open_studio(self):
         if self.studio and self.studio.isVisible(): self.studio.raise_(); self.studio.activateWindow(); return
-        self.studio=StudioWindow(self.store,self.selected_day,self.refresh); self.studio.show()
+        self.studio=StudioWindow(self.store,self.selected_day,self.refresh,self.video_jobs,self.restrictions,self.window().show); self.studio.show()
     def open_clock(self):
         if self.clock_window and self.clock_window.isVisible(): self.clock_window.raise_(); self.clock_window.activateWindow(); return
         self.clock_window=ClockWindow(self.studio if self.studio else None); self.clock_window.show()
@@ -476,8 +573,9 @@ class HomePage(QWidget):
         if not settings["youtube_auto_upload"]:
             return
         for key, path in list(self.store.data["daily_videos"].items()):
-            if key in self.store.data["youtube_uploads"] or not self.store.is_day_locked(date.fromisoformat(key)):
+            if key in self.uploading or key in self.store.data["youtube_uploads"] or key in self.store.data.get("pending_merges", {}) or not self.store.is_day_locked(date.fromisoformat(key)):
                 continue
+            self.uploading.add(key)
             threading.Thread(target=self.upload_daily_video, args=(key, Path(path)), daemon=True).start()
     def upload_daily_video(self, key, path):
         try:
@@ -488,6 +586,8 @@ class HomePage(QWidget):
         except Exception:
             # The video remains queued; the next app launch retries after credentials/network are fixed.
             return
+        finally:
+            self.uploading.discard(key)
 
 
 class HomeWindow(QMainWindow):
@@ -500,8 +600,14 @@ class HomeWindow(QMainWindow):
 
 def main():
     app=QApplication(sys.argv); app.setApplicationName("StudyCam"); app.setWindowIcon(app_icon()); app.setStyleSheet(APP_STYLE); store=StudyStore()
+    app.commitDataRequest.connect(lambda manager: app.setProperty("system_shutdown", True))
     if store.data["settings"]["auto_cleanup_captures"]:
         CameraService(Path(store.data["settings"]["capture_dir"]), Path(store.data["settings"]["storage_dir"])).cleanup_old_captures()
-    window=HomeWindow(store); window.setWindowTitle("StudyCam"); window.setWindowIcon(app_icon()); window.resize(980,720); window.setCentralWidget(HomePage(store)); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show()); sys.exit(app.exec())
+    window=HomeWindow(store); window.setWindowTitle("StudyCam"); window.setWindowIcon(app_icon()); window.resize(980,720); page=HomePage(store); window.setCentralWidget(page); (window.showMaximized() if store.data["settings"]["start_maximized"] else window.show())
+    if store.data["settings"]["startup_window"] == "camera":
+        def open_camera_first():
+            page.open_studio(); window.hide()
+        QTimer.singleShot(0, open_camera_first)
+    sys.exit(app.exec())
 
 if __name__ == "__main__": main()

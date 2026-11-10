@@ -61,9 +61,9 @@ class CameraService:
             if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
                 continue
             try:
-                captured_day = datetime.strptime(path.stem[:8], "%Y%m%d").date()
+                captured_day = datetime.strptime(path.stem, "%Y%m%d_%H%M%S_%f").date()
             except ValueError:
-                captured_day = datetime.fromtimestamp(path.stat().st_mtime).date()
+                continue
             if captured_day < cutoff:
                 try:
                     path.unlink()
@@ -88,8 +88,11 @@ class CameraService:
         if first is None:
             return None
         height, width = first.shape[:2]
-        output = self.video_directory / f"study_{datetime.now():%Y%m%d_%H%M%S}.mp4"
+        output = self.video_directory / f"study_{datetime.now():%Y%m%d_%H%M%S_%f}.mp4"
         writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), max(1, speed), (width, height))
+        if not writer.isOpened():
+            writer.release()
+            return None
         try:
             for path in valid:
                 frame = cv2.imread(str(path))
@@ -161,15 +164,21 @@ class CameraService:
             return None
         height, width = frame.shape[:2]
         writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+        if not writer.isOpened():
+            writer.release()
+            return None
         try:
             for video in valid:
                 capture = cv2.VideoCapture(str(video))
-                while True:
+                try:
                     ok, frame = capture.read()
                     if not ok:
-                        break
-                    writer.write(cv2.resize(frame, (width, height)))
-                capture.release()
+                        return None
+                    while ok:
+                        writer.write(cv2.resize(frame, (width, height)))
+                        ok, frame = capture.read()
+                finally:
+                    capture.release()
         finally:
             writer.release()
         return output if output.exists() else None

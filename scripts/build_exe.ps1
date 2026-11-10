@@ -10,6 +10,7 @@ $bundleMode = if ($OneFile) { "--onefile" } else { "--onedir" }
     --name "StudyCam" `
     --icon "assets\studycam.ico" `
     --add-data "assets\studycam.ico:assets" `
+    --add-data "studycam\browser_extension:studycam\browser_extension" `
     --hidden-import PySide6.QtMultimedia `
     --hidden-import cv2 `
     --collect-all googleapiclient `
