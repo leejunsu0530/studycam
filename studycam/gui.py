@@ -231,7 +231,8 @@ class RestrictionDialog(QDialog):
         if path: self.table.cellWidget(row,2).appendPlainText(str(Path(path)))
 
     def open_extension(self):
-        folder=Path(__file__).resolve().parent/"browser_extension"
+        bundled=Path(sys.executable).resolve().parent/"browser_extension"
+        folder=bundled if getattr(sys,"frozen",False) and bundled.is_dir() else Path(__file__).resolve().parent/"browser_extension"
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def save(self):
